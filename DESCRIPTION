@@ -1,0 +1,15 @@
+Package: impact2
+Version: 0.0.0.9000
+Title: What the Package Does (one line, title case)
+Description: What the package does (one paragraph).
+Authors@R: person("First", "Last", email = "first.last@example.com", role = c("aut", "cre"))
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+ByteCompile: true
+Imports: 
+    dplyr,
+    rstan,
+    ggplot2
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 6.0.1
