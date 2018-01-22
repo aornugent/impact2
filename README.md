@@ -1,9 +1,12 @@
 # impact2
 
-Repository for analysis of Pinnacle vegetation data using joint-species tobit models.
-
+Repository for reproducible analysis of the Pinnacle vegetation
+data using joint species tobit models.
 
 ``` r
+## load data
+data(cover)
+
 ## run models
 run_models()
 

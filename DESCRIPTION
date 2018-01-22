@@ -1,8 +1,8 @@
 Package: impact2
 Version: 0.0.0.9000
-Title: What the Package Does (one line, title case)
-Description: What the package does (one paragraph).
-Authors@R: person("First", "Last", email = "first.last@example.com", role = c("aut", "cre"))
+Title: impact2: Joint species tobit analysis
+Description: Repository for reproducible analysis of the Pinnacle vegetation data using joint species tobit models.
+Authors@R: person("Andrew", "O'Reilly-Nugent", email = "andrew.oreilly-nugent@canberra.edu.au", role = c("aut", "cre"))
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -10,6 +10,8 @@ ByteCompile: true
 Imports: 
     dplyr,
     rstan,
-    ggplot2
+    ggplot2,
+    magrittr,
+    tidyr
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 6.0.1
