@@ -7,8 +7,9 @@
 #' ~0.4-0.9Gb and are not distributed. Previously saved analysis can be
 #' inspected using \code{check_models()} or loaded with \code{load_models()}.
 #'
-#' @param model M0-M6, defaults to all (~2hrs).
+#' @param model m0-m6, defaults to all (~2hrs).
 #' @param path  Directory to save model outputs, defaults to /models.
+#' @param check auto-run model checks, boolean (default = T).
 #'
 #' @usage run_model(model = "m1")
 #'
@@ -16,10 +17,14 @@
 
 run_models <- function(
   models = c("m0", "m1", "m2", "m3", "m4", "m5", "m6"),
-  dir = "models/", ...) {
+  path = "models/",
+  check = T, ...) {
 
   for(model in models) {
-    run_stan_model(model, dir, ...)
+    model_output <- run_stan_model(model, path, ...)
+
+    if(check == T)
+      check_model(model_output)
   }
 }
 
@@ -35,7 +40,7 @@ run_models <- function(
 #'
 #' @export
 
-run_stan_model <- function(model, dir, ...) {
+run_stan_model <- function(model, path, ...) {
 
   # Set parallel options
   rstan::rstan_options(auto_write = TRUE)
@@ -96,11 +101,11 @@ run_stan_model <- function(model, dir, ...) {
                       data_list = data_list)
 
   # Save model output
-  filename = paste0(dir, model, "_output.Rdata")
+  filename = paste0(path, model, "_output.Rdata")
   printf(c("Saving", filename))
   save(model_output, file = filename)
 
-  return(NULL)
+  return(model_output)
 }
 
 
