@@ -10,6 +10,7 @@
 #' @param model m0-m6, defaults to all (~2hrs).
 #' @param path  Directory to save model outputs, defaults to /models.
 #' @param check auto-run model checks, boolean (default = T).
+#' @param ...   passes additional parameters to Stan models such as the LKJ shape prior and abundance threshold of the analysis.
 #'
 #' @usage run_model(model = "m1")
 #'
@@ -24,7 +25,7 @@ run_models <- function(
     model_output <- run_stan_model(model, path, ...)
 
     if(check == T)
-      check_model(model_output)
+      check_models(model, path, model_output)
   }
 }
 
@@ -78,7 +79,7 @@ run_stan_model <- function(model, path, ...) {
       data = data_list,
       iter = 1,
       chains = 1,
-      init_r = 1)
+      init_r = 0.5)
     )
 
   # Run model
@@ -89,8 +90,9 @@ run_stan_model <- function(model, path, ...) {
     data = data_list,
     iter = 2000,
     chains = 3,
-    init_r = 1,
-    save_warmup = F
+    init_r = 0.5,
+    save_warmup = F,
+    control = list(max_treedepth = 15)
   )
 
   # FIGURE OUT ...
@@ -131,53 +133,64 @@ format_data <- function(model,
     years = 2010:2016
 
   # Restrict by years, drop unidentified species.
-  dat <- dplyr::filter(cover,
-                       year %in% years,
-                       !grepl("Unidentified", species)) %>%
-         dplyr::ungroup()
+  dat <- filter(cover,
+           year %in% years,
+           !grepl("Unidentified", species)) %>%
+         ungroup()
 
   # Subset for common species
   species_list <- subset_species(dat, threshold)
 
   # Extract environmental covariates
-  env_covariates <- dplyr::select(dat,
-                                  year,
-                                  site,
-                                  plot_id,
-                                  fence,
-                                  treatment,
-                                  totalN_ppm,
-                                  rain_mm)  %>%
-                    dplyr::distinct() %>%
-                    dplyr::mutate(
-                      rain_scaled = scale(rain_mm),
-                      totalN_scaled = scale(totalN_ppm),
-                      year_id = as.numeric(factor(year)),
-                      treatment_id = as.numeric(factor(paste(fence, treatment)))
-                    )
+  env_covariates <-
+    select(
+      dat,
+      year,
+      site,
+      plot_id,
+      #quadrat,
+      fence,
+      treatment,
+      totalN_ppm,
+      rain_mm)  %>%
+    unique() %>%
+    arrange(year, plot_id) %>%
+    mutate(
+      rain_scaled = scale(rain_mm),
+      totalN_scaled = scale(totalN_ppm),
+      year_id = as.numeric(factor(year)),
+      treatment_id = as.numeric(factor(paste(fence, treatment)))
+    )
 
   if(model == "m0"){
     # Format data for logistic regression of proportion of exotic species.
 
     # Calculate proportion of exotic species
-    prop <- dplyr::group_by(dat, year, plot_id, introduced) %>%
-      dplyr::summarise(group_cover = sum(cover)) %>%
-      dplyr::mutate(prop_cover = group_cover/sum(group_cover)) %>%
-      dplyr::ungroup() %>%
-      dplyr::filter(introduced == 1)
+    prop <- group_by(dat, year, plot_id, introduced) %>%
+      summarise(group_cover = sum(cover)) %>%
+      mutate(prop_cover = group_cover/sum(group_cover)) %>%
+      ungroup() %>%
+      filter(introduced == 1)
 
     # Scaled response: 0 < y < 1, Smithson (2006)
-    logit <- dplyr::mutate(prop,
-                           prop_scaled = (prop_cover * (n() - 1) + 0.5)/n(),
-                           logit = log(prop_scaled /(1 - prop_scaled)))
+    logit <- mutate(prop,
+                     prop_scaled = (prop_cover * (n() - 1) + 0.5)/n(),
+                     logit = log(prop_scaled /(1 - prop_scaled)))
 
     y = logit$logit
   }  else {
     # Format data for tobit regression of cover values.
 
+    cover <- group_by(dat,
+                      year,
+                      plot_id,
+                      #quadrat,
+                      species) %>%
+      summarise(cover = mean(cover))
+
     # Reshape multivariate data
-    cover_wide <- dplyr::select(dat, year, plot_id, species, cover) %>%
-                  dplyr::filter(species %in% species_list$species) %>%
+    cover_wide <- filter(cover,
+                         species %in% unlist(species_list$species)) %>%
                   tidyr::spread(species, cover, fill = 0)
 
     y = as.matrix(cover_wide[, c(-1, -2)])
@@ -190,22 +203,23 @@ format_data <- function(model,
   plots <- as.numeric(factor(env_covariates$plot_id))
   sites <- nested(env_covariates$plot_id, env_covariates$site)
 
-  data_list <- list(y_observed = y,
-                    N = nrow(env_covariates),
-                    N_censored = sum(y == 0),
-                    S = nrow(species_list),
-                    K = ncol(X),
-                    X = X,
-                    E = max(env_covariates$treatment_id),
-                    treatment = env_covariates$treatment_id,
-                    plot = plots,
-                    site = sites,
-                    year = env_covariates$year_id,
-                    N_plots = max(plots),
-                    N_sites = max(sites),
-                    N_years = max(env_covariates$year),
-                    shape_prior = lkj_prior,
-                    species_list = species_list)
+  data_list <-
+    list(
+      y_observed = y,
+      N = nrow(env_covariates),
+      N_censored = sum(y == 0),
+      S = nrow(species_list),
+      K = ncol(X),
+      X = X,
+      E = max(env_covariates$treatment_id),
+      treatment = env_covariates$treatment_id,
+      plot = plots,
+      site = sites,
+      N_plots = max(plots),
+      N_sites = max(sites),
+      shape_prior = lkj_prior,
+      species_list = species_list,
+      env_covariates = env_covariates)
 
   return(data_list)
 }
@@ -221,15 +235,15 @@ format_data <- function(model,
 #' @usage subset_species(cover, 0.9)
 
 subset_species <- function(dat, threshold) {
-  dplyr::group_by(dat, species) %>%
-  dplyr::summarise(total = sum(cover)) %>%
-  dplyr::mutate(prop = total / sum(total)) %>%
-  dplyr::arrange(desc(prop)) %>%
-  dplyr::mutate(common = ifelse(cumsum(prop) < threshold, 1, 0)) %>%
-  dplyr::filter(common == 1) %>%
-  dplyr::select(species) %>%
-  dplyr::mutate(species_id = as.numeric(as.factor(species))) %>%
-  dplyr::arrange(species_id)
+  group_by(dat, species) %>%
+  summarise(total = sum(cover)) %>%
+  mutate(prop = total / sum(total)) %>%
+  arrange(desc(prop)) %>%
+  mutate(common = ifelse(cumsum(prop) < threshold, 1, 0)) %>%
+  filter(common == 1) %>%
+  select(species) %>%
+  mutate(species_id = as.numeric(as.factor(species))) %>%
+  arrange(species_id)
 }
 
 #' Index nested factors
