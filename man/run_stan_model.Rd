@@ -4,7 +4,7 @@
 \alias{run_stan_model}
 \title{Run Stan model}
 \usage{
-run_stan_model(model, dir, ...)
+run_stan_model(model, path, ...)
 }
 \arguments{
 \item{model}{one of c("m0", "m1", "m2", "m3", "m4", "m5", "m6")}

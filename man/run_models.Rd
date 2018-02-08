@@ -7,9 +7,13 @@
 run_model(model = "m1")
 }
 \arguments{
-\item{model}{M0-M6, defaults to all (~2hrs).}
-
 \item{path}{Directory to save model outputs, defaults to /models.}
+
+\item{check}{auto-run model checks, boolean (default = T).}
+
+\item{...}{passes additional parameters to Stan models such as the LKJ shape prior and abundance threshold of the analysis.}
+
+\item{model}{m0-m6, defaults to all (~2hrs).}
 }
 \description{
 This analysis compares several models of increasing complexity. Models

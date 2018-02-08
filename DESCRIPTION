@@ -10,16 +10,12 @@ ByteCompile: true
 Imports: 
     dplyr,
     ggplot2,
-    magrittr,
     tidyr,
-    rstan (>= 2.17.2), 
-    rstantools (>= 1.4.0)
-LinkingTo: 
-    StanHeaders (>= 2.17.1), 
-    rstan (>= 2.17.2), 
-    BH (>= 1.65.0.1), 
-    Rcpp (>= 0.12.14), 
-    RcppEigen (>= 0.3.3.3.1)
+    rstan (>= 2.17.2),
+    rstantools (>= 1.4.0),
+    circlize,
+    forcats,
+    readr
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 6.0.1
 Depends: 
