@@ -10,22 +10,21 @@
 #' Cover data does not contain absences and is aggregated as the mean cover
 #' value for each species across all quadrats in a plot.
 #'
-#' @example
 #'
 #' source("data-raw/survey/survey_data.R")
 #' source("data-raw/climate/climate_data.R")
 
 # Soil and treatment data
 env <- readr::read_csv("data-raw/pinnacle_covariates.csv") %>%
-  dplyr::mutate(
-    treatment = dplyr::case_when(
+  mutate(
+    treatment = case_when(
       grepl("control", treatment) ~ "Control",
       grepl("slash", treatment) ~ "Slashed",
       TRUE ~ treatment),
-    fence = dplyr::case_when(
+    fence = case_when(
       grepl("fenced", fence) ~ "Fenced",
       grepl("open", fence) ~ "Grazed")) %>%
-  dplyr::select(plot_id, treatment, fence, totalN_ppm)
+  select(plot_id, treatment, fence, totalN_ppm)
 
 
 # Rainfall data
@@ -37,17 +36,19 @@ cover <- readr::read_csv("data-raw/pinnacle_surveys.csv",
                          col_type = readr::cols(
                            cover = readr::col_double()))
 
+# Aggregate to plot level
+# cover <- group_by(cover, year, site, plot_id, species) %>%
+#   mutate(cover = mean(cover)) %>%
+#   select(-quadrat) %>%
+#   distinct()
+
 # Join and filter
 cover <- cover %>%
-  dplyr::left_join(env) %>%
-  dplyr::left_join(rain) %>%
-  dplyr::filter(grepl("Control|Slashed", treatment))
+  left_join(env) %>%
+  left_join(rain) %>%
+  filter(grepl("Control|Slashed", treatment))
 
-# Aggregate to plot level
-cover <- dplyr::group_by(cover, year, site, plot_id, species) %>%
-  dplyr::mutate(cover = mean(cover)) %>%
-  dplyr::select(-quadrat) %>%
-  dplyr::distinct()
+
 
 # Trait data
 traits <- readr::read_csv("data-raw/pinnacle_traits.csv")
