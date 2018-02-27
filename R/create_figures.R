@@ -44,6 +44,14 @@ create_figures <-  function(
       if(fig == 4 & !grepl("m0", model))
         interaction_network_figure(model, path)
 
+      # Create interaction density figure for models with varying covariances
+      if(fig == 5)
+        covariance_density_figure(model, path)
+
+      # Create trait covariance correlation plots
+      if(fig == 6)
+        trait_correlation_figure(model, path)
+
     }
   }
 }
@@ -147,7 +155,7 @@ linear_tobit_figure <- function(model, path) {
   }
 
   # Predict values
-  pred_cover <- pred_cover(species_coef, range = 4)
+  pred_cover <- pred_cover(species_coef, range = 2.5)
 
   scale <- min(c(ceiling(max(pred_cover$mean)), 100))
 
@@ -220,6 +228,7 @@ covariance_heatmap_figure <- function(model, path) {
   model_output <- load_model(model, path)
 
   species_list <- model_output$data_list$species_list
+  n = max(species_list$species_id)
 
   env_covariates <- model_output$data_list$env_covariates %>%
     select(treatment_id, fence, treatment) %>%
@@ -299,18 +308,17 @@ covariance_heatmap_figure <- function(model, path) {
   if(grepl("m5|m6", model)) {
     p <- p +
       facet_wrap(~ fence) +
-      annotate("segment", x = 0.5, xend = 22.5,
-              y = 0.5, yend = 22.5, linetype = "dashed") +
-      annotate("text", x = 5, y = 20.5, label = "Removal") +
-      annotate("text", x = 20, y = 3.5, label = "Control") +
+      annotate("segment", x = 0.5, xend = n + 0.5,
+              y = 0.5, yend = n + 0.5, linetype = "dashed") +
+      annotate("text", x = 5, y = n - 2, label = "Removal") +
+      annotate("text", x = n - 4, y = 3.5, label = "Control") +
       annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
   }
 
-  print(p)
-
   # Save plot
   filename <- paste0("figures/", model, "_covariance_heatmap.png")
-  ggsave(filename = filename, plot = p, dpi = 600)
+  ggsave(filename = filename, plot = p,
+         width = 12, height = 9, dpi = 600)
 
   # Display plot
   print(p)
@@ -460,6 +468,149 @@ interaction_network_figure <- function(model, path) {
     # Save file
     dev.off()
   }
+}
+
+#' Covariance change between treatments
+#'
+#' Creates density plots of covariances of selected species to compare change
+#' in interaction strength between treatments.
+#'
+#' @usage covaraiance_density_figure("m6",
+#' species = c("Avena.fatua", "Bromus.diandrus", "Acetosella.vulgaris))
+#' @export
+
+covariance_density_figure <- function(model, path,
+                                      species = c("Avena.fatua",
+                                                  "Bromus.diandrus",
+                                                  "Acetosella.vulgaris")) {
+
+  # Load model
+  model_output <- load_model(model, path)
+
+  env_covariates <- model_output$data_list$env_covariates %>%
+    select(treatment_id, fence, treatment) %>%
+    distinct()
+
+  # Models have different number of treatments
+  if(!grepl("m5|m6", model)) {
+    printf("Figure only defined for models with varying covariances")
+    break
+  }
+
+  E = max(env_covariates$treatment_id)
+
+  Sigma <- extract_pars(model_output$stan_output,
+                        c("Sigma"),
+                        index = c("treatment_id", "species_a", "species_b")) %>%
+    filter(parameter == "Sigma") %>%
+    left_join(., species_list, by = c("species_a" = "species_id")) %>%
+    left_join(., species_list, by = c("species_b" = "species_id")) %>%
+    left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id"))
+
+  sp_cov <- filter(Sigma, species.x %in% species,
+                   species_a != species_b,
+                   mean <= 0,
+                   mean > min(mean)) %>%
+    mutate(treatment2 = paste(fence, treatment))
+
+  p <- ggplot(sp_cov, aes(x = mean,
+                     group = treatment2,
+                     linetype = fence)) +
+    geom_density() +
+    geom_vline(aes(xintercept = 0), size = 1) +
+    facet_wrap(species.x ~ treatment, scales = "free_y", ncol = 2) +
+    coord_cartesian(expand = F) +
+    labs(x = "Between species covariance",
+         y = "Density",
+         linetype = "") +
+    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+
+  # Save plot
+  filename <- paste0("figures/", model, "changing_covariance_density.png")
+  ggsave(filename = filename, plot = p,
+         width = 12, height = 9, dpi = 600)
+
+  # Display plot
+  print(p)
+
+}
+
+#' Changes in covariance with relative trait values
+#'
+#' Plots correlations between the pairwise differences in species traits and
+#' between species covariances.
+#'
+#' The trait dataset includes:
+#' \enumerate{
+#'  \item{Leaf.length}
+#'  \item{Leaf.width}
+#'  \item{Max.height}
+#'  \item{SLA}
+#'  \item{Vegetative.height}
+#'  \item{Vegetative.width}
+#' }
+#'
+#' @usage trait_correlation_figure("m4", trait = "SLA")
+#' @export
+
+trait_correlation_figure <- function(model, path, trait_id = "Max.height"){
+
+  # Load model
+  model_output <- load_model(model, path)
+
+  species_list <- model_output$data_list$species_list
+
+  env_covariates <- model_output$data_list$env_covariates %>%
+    select(treatment_id, fence, treatment) %>%
+    distinct()
+
+  # Models have different number of treatments
+  if(!grepl("m5|m6", model)) {
+    printf("Figure only defined for models with varying covariances")
+    break
+  }
+
+  Sigma <- extract_pars(model_output$stan_output,
+                        c("Sigma"),
+                        index = c("treatment_id", "species_a", "species_b")) %>%
+    filter(parameter == "Sigma") %>%
+    left_join(., species_list, by = c("species_a" = "species_id")) %>%
+    left_join(., species_list, by = c("species_b" = "species_id")) %>%
+    left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id")) %>%
+    rename(mean_cov = mean)
+
+  trait <- filter(traits, grepl(paste0(trait_id, collapse = "|"), trait)) %>%
+    tidyr::gather(quantile, value, mean:max) %>%
+    filter(quantile == "max")
+
+  trait_diff <- filter(Sigma, species.x %in% species_list$species,
+           species_a != species_b) %>%
+    left_join(trait, by = c("species.x" = "species")) %>%
+    left_join(trait, by = c("species.y" = "species")) %>%
+    filter(quantile.x == quantile.y) %>%
+    mutate(difference = abs(value.x - value.y))
+
+  p <- ggplot(trait_diff, aes(x = difference,
+                              y = mean_cov)) +
+    geom_hline(aes(yintercept = 0), linetype = "dashed") +
+    geom_point(alpha = 0.8) +
+    geom_smooth(method = "lm", se = F, color = "red") +
+    facet_grid(fence ~ treatment) +
+    coord_cartesian(expand = F, ylim = c(-300, 300)) +
+    labs(x = paste("Absolute", trait_id, "difference"),
+         y = "Between species covariance") +
+    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+
+  # Save plot
+  filename <- paste0("figures/", model, "_covariance_trait_correlation.png")
+  ggsave(filename = filename, plot = p,
+         width = 12, height = 9, dpi = 600)
+
+  # Display plot
+  print(p)
+
 }
 
 
