@@ -50,10 +50,10 @@ rm(list = grep("_", ls(), value = T))
 
 
 # Resolve species names
-species <- readr::read_csv("data-raw/survey/id_to_species.csv")
+species_id <- readr::read_csv("data-raw/survey/id_to_species.csv")
 
 # Aggregate species complexes
-cover <- dplyr::left_join(cover, species) %>%
+cover <- dplyr::left_join(cover, species_id) %>%
   dplyr::mutate(
     species = dplyr::case_when(
       grepl("Vulpia",  species) ~ "Vulpia.sp",
@@ -77,5 +77,22 @@ tax <- readr::read_csv("data-raw/survey/pinnacle_taxonomy.csv") %>%
 cover <- dplyr::left_join(cover, tax)
 
 write_csv(x = cover, path = "data-raw/pinnacle_surveys.csv")
+
+# Do the same for traits
+
+traits <- readr::read_csv("data-raw/survey/pinnacle_traits_2016.csv") %>%
+  dplyr::filter(species %in% species_id$species) %>%
+  dplyr::mutate(
+    species = dplyr::case_when(
+      grepl("Vulpia",  species) ~ "Vulpia.sp",
+      grepl("Rytidosperma", species) ~ "Rytidosperma.sp",
+      grepl("Aira", species) ~ "Aira.sp",
+      TRUE ~ as.character(species))) %>%
+  dplyr::group_by(species, trait) %>%
+  dplyr::summarise(mean = mean(mean),
+                   max = mean(max))
+
+write_csv(x = traits, path = "data-raw/pinnacle_traits.csv")
+
 
 rm(list = ls())

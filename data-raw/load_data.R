@@ -49,10 +49,9 @@ cover <- cover %>%
   filter(grepl("Control|Slashed", treatment))
 
 
-
 # Trait data
-traits <- readr::read_csv("data-raw/pinnacle_traits.csv")
-
+traits <- readr::read_csv("data-raw/pinnacle_traits.csv") %>%
+  filter(species %in% cover$species)
 
 # Save datasets
 devtools::use_data(cover, overwrite = T)
