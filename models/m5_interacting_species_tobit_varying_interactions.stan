@@ -17,16 +17,17 @@ data{
   int<lower=1> N_plots;
   int<lower=1> N_sites;
 
-  vector<lower=0>[S] y_observed[N];           //left censored data
   vector[K] X[N];                             //environmental covariates
+  vector<lower=0>[S] y_observed[N];           //left censored data
+
   int<lower=1, upper=E> treatment[N];         //treatment index
   int<lower=1, upper=N_plots> plot[N];        //plot index
   int<lower=1, upper=N_sites> site[N_plots];  //site index
   int<lower=1> shape_prior;                   //LKJ prior shape parameter
 }
 parameters{
-  matrix[S, K] B;                          //scaled species coefficients
-  vector[K] mu_B;
+  matrix[S, K] B;                             //scaled species coefficients
+  vector[K] mu_K;
   vector<lower=0>[K] sigma_B;
 
   vector[N_plots] B_plot;                     //scaled random effects
@@ -36,25 +37,16 @@ parameters{
   real<lower=0> sigma_site;
 
   cholesky_factor_corr[S] L_Omega[E];         //correlation cholesky factor
-  vector<lower=0>[S] sigma;                   //observation variances
+  vector<lower=0>[S] sigma[E];                   //observation variances
 
   real<upper=0> y_censored[N_censored];       //censored values as parameters
 }
 transformed parameters{
   cholesky_factor_cov[S] L_Sigma[E];          //covariance cholesky factor
 
-  vector[S] mu[N];                            //linear predictor of cover
-
-  // Generate linear predictors
-  for(i in 1:N){
-    for(j in 1:S){
-      mu[i, j] = (B[j] * X[i]) + B_plot[plot[i]];
-    }
-  }
-
   // Convert correlation to covariance
   for(i in 1:E){
-    L_Sigma[i] = diag_pre_multiply(sigma, L_Omega[i]);
+    L_Sigma[i] = diag_pre_multiply(sigma[i], L_Omega[i]);
   }
 }
 model{
@@ -74,19 +66,19 @@ model{
     }
 
     // Likelihood
-    y_latent[i] ~ multi_normal_cholesky(mu[i], L_Sigma[treatment[i]]);
+    y_latent[i] ~ multi_normal_cholesky(B * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
   }
 
   // Priors
   // Coefficients have central means and variance.
   for(j in 1:K){
-    B[ , j] ~ student_t(2, mu_B[j], sigma_B[j]);
+    B[ , j] ~ student_t(3, mu_K[j], sigma_B[j]);
   }
 
-  mu_B ~ normal(0, 20);
+  mu_K ~ normal(0, 20);
   sigma_B ~ normal(0, 20);
 
-  // Plots are nested within sites.
+  // Quadrats are nested within plots, within sites.
   B_plot ~ normal(B_site[site], sigma_plot);
   sigma_plot ~ cauchy(0, 3);
 
@@ -96,8 +88,8 @@ model{
   // Correlations and covarinces change between treatments.
   for(i in 1:E){
     L_Omega[i] ~ lkj_corr_cholesky(shape_prior);
+    sigma[i] ~ cauchy(0, 5);
   }
-  sigma ~ cauchy(0, 5);
 }
 generated quantities{
   vector[S] y_pred[N];                        //predicted fit
@@ -105,11 +97,11 @@ generated quantities{
   cov_matrix[S] Sigma[E];                     //covariance matrix
 
   for(i in 1:N){
-    y_pred[i] = multi_normal_cholesky_rng(mu[i], L_Sigma[treatment[i]]);
+    y_pred[i] = multi_normal_cholesky_rng(B * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
   }
 
   for(i in 1:E){
     Omega[i] = multiply_lower_tri_self_transpose(L_Omega[i]);
-    Sigma[i] = quad_form_diag(Omega[i], sigma);
+    Sigma[i] = quad_form_diag(Omega[i], sigma[i]);
   }
 }

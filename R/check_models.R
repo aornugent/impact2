@@ -13,12 +13,13 @@
 
 check_models <- function(
   models = c("m0", "m1", "m2", "m3", "m4", "m5", "m6"),
-  path = "models/", ...) {
+  path = "models/",
+  model_output = NA, ...) {
 
   for(model in models) {
 
-    # Load model from .Rdata file
-    if(is.character(model))
+    # Load model if need be
+    if(is.na(model_output[1]))
       model_output <- load_model(model, path, ...)
 
     # Check for convergence
@@ -138,7 +139,7 @@ posterior_check <- function(model_output) {
   df <- data.frame(obs = matrix(y_obs, ncol = 1),
                    pred = matrix(y_pred, ncol = 1),
                    pred_censored = matrix(y_pred_censored, ncol = 1)) %>%
-        dplyr::mutate(obs_pa = ifelse(obs > 0, 1, 0),
+        mutate(obs_pa = ifelse(obs > 0, 1, 0),
                pred_pa = ifelse(pred > 0, 1, 0))
 
   # Root square mean error of censored predictions
@@ -151,22 +152,22 @@ posterior_check <- function(model_output) {
   printf("Distance between data and censored predictions = %.3f", dist)
 
   # Predicted presences
-  pres_acc <-  dplyr::filter(df, pred_pa == 1) %>%
-    dplyr::summarise(sum(obs_pa == 1) / n()) %>%
+  pres_acc <-  filter(df, pred_pa == 1) %>%
+    summarise(sum(obs_pa == 1) / n()) %>%
     round(2)
 
   printf("Accuracy of predicted presences = %.2f", pres_acc)
 
   # Predicted absences
-  abs_acc <- dplyr::filter(df, pred_pa == 0) %>%
-    dplyr::summarise(sum(obs_pa == 0) / n()) %>%
+  abs_acc <- filter(df, pred_pa == 0) %>%
+    summarise(sum(obs_pa == 0) / n()) %>%
     round(2)
 
   printf("Accuracy of predicted absences = %.2f", abs_acc)
 
   # R-squared of predicted abundances
-  abun_Rsq <- dplyr::filter(df, pred > 0) %>%
-    dplyr::summarise(R_squared = 1 - (sum((obs - pred)^2) / sum((obs - mean(obs))^2)))
+  abun_Rsq <- filter(df, pred > 0) %>%
+    summarise(R_squared = 1 - (sum((obs - pred)^2) / sum((obs - mean(obs))^2)))
 
   printf("R-squared of predicted abundances = %.2f", abun_Rsq)
 }

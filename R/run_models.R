@@ -71,7 +71,7 @@ run_stan_model <- function(model, path, ...) {
   )
 
   # Pre-compile model
-  printf("\nCompiling model...")
+  printf("\nCompiling model... (ignore non-fatal warnings)")
 
   suppressWarnings(
     testfit <- rstan::stan(
@@ -117,13 +117,15 @@ run_stan_model <- function(model, path, ...) {
 #' analysis in Stan. The Stan models are written such that the are able
 #' to take largely the same data structure, with the exception of M0.
 #'
-#' @param threshold restrict analysis to some proportion of total abundance.
 #' @param years restrict analysis by years.
+#' @param threshold restrict analysis to some proportion of total abundance.
+#' @param subset subset species by presence or abundance.
 #' @param lkj_prior shape value for covariance matrices in joint models.
 
 format_data <- function(model,
-                        threshold = 0.9,
                         years = c(2013:2016),
+                        threshold = 0.15,
+                        subset = "presence",
                         lkj_prior = 25, ...) {
 
   # Load dataset
@@ -136,10 +138,18 @@ format_data <- function(model,
   dat <- filter(cover,
            year %in% years,
            !grepl("Unidentified", species)) %>%
-         ungroup()
+         ungroup() %>%
+    mutate(quadrat_id = as.numeric(factor(paste(plot_id, quadrat))))
 
   # Subset for common species
-  species_list <- subset_species(dat, threshold)
+  if(subset == "presence") {
+    species_list <- subset_species_plots(dat, threshold)
+  }
+
+  if(subset == "abundance") {
+    species_list <- subset_species_abundance(dat, threshold)
+  }
+
 
   # Extract environmental covariates
   env_covariates <-
@@ -148,13 +158,13 @@ format_data <- function(model,
       year,
       site,
       plot_id,
-      #quadrat,
+      quadrat_id,
       fence,
       treatment,
       totalN_ppm,
       rain_mm)  %>%
     unique() %>%
-    arrange(year, plot_id) %>%
+    arrange(year, plot_id, quadrat_id) %>%
     mutate(
       rain_scaled = scale(rain_mm),
       totalN_scaled = scale(totalN_ppm),
@@ -184,7 +194,7 @@ format_data <- function(model,
     cover <- group_by(dat,
                       year,
                       plot_id,
-                      #quadrat,
+                      quadrat_id,
                       species) %>%
       summarise(cover = mean(cover))
 
@@ -193,14 +203,14 @@ format_data <- function(model,
                          species %in% unlist(species_list$species)) %>%
                   tidyr::spread(species, cover, fill = 0)
 
-    y = as.matrix(cover_wide[, c(-1, -2)])
+    y = as.matrix(cover_wide[, c(-1, -2, -3)])
   }
 
   # Set up model matrix with intercept, fertility and rainfall (scaled)
   X <- model.matrix(~ 1 + totalN_scaled + rain_scaled, env_covariates)
 
-  # Nest plots within sites
-  plots <- as.numeric(factor(env_covariates$plot_id))
+  # Nest quadrats within plots, within sites
+  plots <- as.numeric(as.factor(env_covariates$plot_id))
   sites <- nested(env_covariates$plot_id, env_covariates$site)
 
   data_list <-
@@ -234,16 +244,45 @@ format_data <- function(model,
 #'
 #' @usage subset_species(cover, 0.9)
 
-subset_species <- function(dat, threshold) {
+subset_species_abundance <- function(dat, threshold) {
+
+  # Aggregate abundance by species, then rank and filter.
   group_by(dat, species) %>%
-  summarise(total = sum(cover)) %>%
-  mutate(prop = total / sum(total)) %>%
-  arrange(desc(prop)) %>%
-  mutate(common = ifelse(cumsum(prop) < threshold, 1, 0)) %>%
-  filter(common == 1) %>%
-  select(species) %>%
-  mutate(species_id = as.numeric(as.factor(species))) %>%
-  arrange(species_id)
+    summarise(total_abun = sum(cover)) %>%
+    mutate(prop_abun = total_abun / sum(total_abun)) %>%
+    arrange(desc(prop_abun)) %>%
+    filter(cumsum(prop_abun) < threshold) %>%
+    mutate(species_id = as.numeric(as.factor(species))) %>%
+    arrange(species_id)
+}
+
+
+#' Generate proportional presence lists
+#'
+#' Selects the most abundant species in the dataset by the proportion plots
+#' a species was observed in. Discards species absent in one or more years.
+#'
+#' 15% of plots is a typical default.
+#'
+#' @usage subset_species(cover, 0.15)
+#'
+#' @importFrom tidyr gather
+
+subset_species_plots <- function(dat, threshold) {
+
+  # Get total number of plots
+  n_total = n_distinct(paste(dat$year, dat$plot_id))
+
+  # Aggregate presences by species, filter by threshold.
+  group_by(dat, species, year) %>%
+    summarise(n = n_distinct(plot_id)) %>%
+    spread(year, n) %>%
+    gather(year, n, -species) %>%
+    summarise(total_plots = sum(n),
+              prop_plots = total_plots / n_total) %>%
+    filter(prop_plots >= threshold) %>%
+    mutate(species_id = as.numeric(as.factor(species))) %>%
+    arrange(species_id)
 }
 
 #' Index nested factors
