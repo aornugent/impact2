@@ -1,12 +1,13 @@
-// M5 - Joint species tobit with varying interactions.
+// M3 - Joint species tobit with varying intercepts, slopes and interactions.
 
 // Species respond to environmental gradients of fertility and rainfall the
-// same across all treatements and interact with each other differently
+// differently in each treatement and interact with each other differently
 // in each experimental treatment.
 
 // author: Andrew O'Reilly-Nugent
 // email:  andrew.oreilly-nugent@canberra.edu.au
 // date:   22/01/18
+
 
 data{
   int<lower=1> N;
@@ -17,18 +18,18 @@ data{
   int<lower=1> N_plots;
   int<lower=1> N_sites;
 
-  vector[K] X[N];                             //environmental covariates
   vector<lower=0>[S] y_observed[N];           //left censored data
-
+  vector[K] X[N];                             //environmental covariates
   int<lower=1, upper=E> treatment[N];         //treatment index
-  int<lower=1, upper=N_plots> plot[N];        //plot index
+  int<lower=1, upper=N_plots> plot[N];  //plot index
   int<lower=1, upper=N_sites> site[N_plots];  //site index
   int<lower=1> shape_prior;                   //LKJ prior shape parameter
 }
 parameters{
-  matrix[S, K] B;                             //scaled species coefficients
+  matrix[S, K] B[E];                          //scaled species coefficients
+  vector[K] mu_B[E];
+  vector<lower=0>[K] sigma_B[E];
   vector[K] mu_K;
-  vector<lower=0>[K] sigma_B;
 
   vector[N_plots] B_plot;                     //scaled random effects
   real<lower=0> sigma_plot;
@@ -55,7 +56,7 @@ model{
 
   // Uncensor data
   for(i in 1:N) {
-    for (j in 1:S) {
+    for(j in 1:S) {
       if (y_observed[i, j] > 0) {
         y_latent[i, j] = y_observed[i, j];
       }
@@ -66,38 +67,38 @@ model{
     }
 
     // Likelihood
-    y_latent[i] ~ multi_normal_cholesky(B * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
+    y_latent[i] ~ multi_normal_cholesky(B[treatment[i]] * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
   }
 
   // Priors
-  // Coefficients have central means and variance.
-  for(j in 1:K){
-    B[ , j] ~ student_t(3, mu_K[j], sigma_B[j]);
+  for(i in 1:E){
+    for(j in 1:K){
+      B[i, , j] ~ student_t(3, mu_B[i, j], sigma_B[i, j]);
+
+      mu_B[i, j] ~ normal(mu_K[j], 20);
+      sigma_B[i, j] ~ normal(0, 20);
+    }
+
+    L_Omega[i] ~ lkj_corr_cholesky(shape_prior);
+    sigma[i] ~ cauchy(0, 5);
   }
 
   mu_K ~ normal(0, 20);
-  sigma_B ~ normal(0, 20);
 
-  // Quadrats are nested within plots, within sites.
+  // Plots nested within sites.
   B_plot ~ normal(B_site[site], sigma_plot);
   sigma_plot ~ cauchy(0, 3);
 
   B_site ~ normal(0, sigma_site);
   sigma_site ~ cauchy(0, 3);
-
-  // Correlations and covarinces change between treatments.
-  for(i in 1:E){
-    L_Omega[i] ~ lkj_corr_cholesky(shape_prior);
-    sigma[i] ~ cauchy(0, 5);
-  }
 }
 generated quantities{
-  vector[S] y_pred[N];                        //predicted fit
-  corr_matrix[S] Omega[E];                    //correlation matrix
-  cov_matrix[S] Sigma[E];                     //covariance matrix
+  vector[S] y_pred[N];                  //predicted fit
+  corr_matrix[S] Omega[E];              //correlation matrix
+  cov_matrix[S] Sigma[E];               //covariance matrix
 
   for(i in 1:N){
-    y_pred[i] = multi_normal_cholesky_rng(B * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
+    y_pred[i] = multi_normal_cholesky_rng(B[treatment[i]] * X[i] + B_plot[plot[i]], L_Sigma[treatment[i]]);
   }
 
   for(i in 1:E){
