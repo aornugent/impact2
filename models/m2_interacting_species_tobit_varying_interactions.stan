@@ -72,23 +72,23 @@ model{
   // Priors
   // Coefficients have central means and variance.
   for(j in 1:K){
-    B[ , j] ~ student_t(3, mu_K[j], sigma_B[j]);
+    B[ , j] ~ student_t(4, mu_K[j], sigma_B[j]);
   }
 
-  mu_K ~ normal(0, 20);
-  sigma_B ~ normal(0, 20);
+  mu_K ~ normal(0, 1);
+  sigma_B ~ normal(0, 1);
 
   // Quadrats are nested within plots, within sites.
   B_plot ~ normal(B_site[site], sigma_plot);
-  sigma_plot ~ cauchy(0, 3);
+  sigma_plot ~ cauchy(0, 1);
 
   B_site ~ normal(0, sigma_site);
-  sigma_site ~ cauchy(0, 3);
+  sigma_site ~ cauchy(0, 1);
 
   // Correlations and covarinces change between treatments.
   for(i in 1:E){
     L_Omega[i] ~ lkj_corr_cholesky(shape_prior);
-    sigma[i] ~ cauchy(0, 5);
+    sigma[i] ~ cauchy(0, 1);
   }
 }
 generated quantities{

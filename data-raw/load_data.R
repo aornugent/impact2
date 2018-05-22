@@ -36,11 +36,9 @@ cover <- readr::read_csv("data-raw/pinnacle_surveys.csv",
                          col_type = readr::cols(
                            cover = readr::col_double()))
 
-# Aggregate to plot level
-# cover <- group_by(cover, year, site, plot_id, species) %>%
-#   mutate(cover = mean(cover)) %>%
-#   select(-quadrat) %>%
-#   distinct()
+# Rescale data to 0-1 range
+cover <- mutate(cover, cover = cover / 100)
+
 
 # Join and filter
 cover <- cover %>%

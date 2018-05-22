@@ -73,14 +73,14 @@ model{
   // Priors
   for(i in 1:E){
     for(j in 1:K){
-      B[i, , j] ~ student_t(3, mu_B[i, j], sigma_B[i, j]);
+      B[i, , j] ~ student_t(4, mu_B[i, j], sigma_B[i, j]);
 
-      mu_B[i, j] ~ normal(mu_K[j], 10);
-      sigma_B[i, j] ~ normal(0, 10);
+      mu_B[i, j] ~ normal(mu_K[j], 1);
+      sigma_B[i, j] ~ normal(0, 1);
     }
   }
 
-  mu_K ~ normal(0, 10);
+  mu_K ~ normal(0, 1);
 
   // Plots nested within sites.
   B_plot ~ normal(B_site[site], sigma_plot);
@@ -91,7 +91,7 @@ model{
 
   // Correlations and covariances are constant.
   L_Omega ~ lkj_corr_cholesky(shape_prior);
-  sigma ~ cauchy(0, 3);
+  sigma ~ cauchy(0, 1);
 }
 generated quantities{
   vector[S] y_pred[N];                        //predicted fit
