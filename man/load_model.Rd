@@ -7,7 +7,7 @@
 model_output <- load_models(model = "m1", path = "models/")
 }
 \arguments{
-\item{model}{m0-m6, defaults to all.}
+\item{model}{m0-m3, defaults to all.}
 
 \item{path}{Directory to save model outputs, defaults to /models.}
 }

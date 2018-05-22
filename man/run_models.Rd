@@ -13,7 +13,7 @@ run_model(model = "m1")
 
 \item{...}{passes additional parameters to Stan models such as the LKJ shape prior and abundance threshold of the analysis.}
 
-\item{model}{m0-m6, defaults to all (~2hrs).}
+\item{model}{m0-m3, defaults to all (~2hrs).}
 }
 \description{
 This analysis compares several models of increasing complexity. Models
@@ -23,4 +23,14 @@ are coded in Stan and can be found in the \code{/models} subdirectory.
 Model output is saved to .Rdata files for later inspection. These are
 ~0.4-0.9Gb and are not distributed. Previously saved analysis can be
 inspected using \code{check_models()} or loaded with \code{load_models()}.
+
+Models include:
+\enumerate{
+\item{M0: Logistic regression of the proportion of nonnative species cover}
+\item{M1: Joint species model with varying intercepts and slopes, constant covariance}
+\item{M2: Joint species model with constant intercepts and slopes, varying covariance}
+\item{M3: Joint species model with varying intercepts, slopes and covariance}
+}
+
+M0, M1, and M3 are presented in the manuscript (O'Reilly-Nugent, et al. 2018)
 }

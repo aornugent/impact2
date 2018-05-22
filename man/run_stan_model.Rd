@@ -7,12 +7,12 @@
 run_stan_model(model, path, ...)
 }
 \arguments{
-\item{model}{one of c("m0", "m1", "m2", "m3", "m4", "m5", "m6")}
+\item{model}{one of c("m0", "m1", "m2", "m3")}
 
 \item{...}{tuning parameters for Stan sampler}
 }
 \description{
-Contains pre-processing and wraps \link\link{rstan} to run analyses using
+Contains pre-processing and wraps \link{rstan} to run analyses using
 adaptive Hamiltonian Monte Carlo. Sensible default settings are provided,
 but can be tweaked as necessary.
 }

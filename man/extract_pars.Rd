@@ -8,11 +8,11 @@ pars <- extract_par(model_output, c("B"),
 c("species", "covariate", "treatment"))
 }
 \arguments{
-\item{fit}{output of a Stan model}
-
 \item{pars}{vector of parameter names}
 
 \item{index}{vector of labels for parameter indexes}
+
+\item{fit}{output of a Stan model}
 }
 \description{
 Stan output provides summaries of parameter estimates, this can be

@@ -2,10 +2,12 @@
 
 export(check_models)
 export(convergence_check)
-export(covariance_density_figure)
+export(correlation_heatmap_figure)
+export(covariance_distribution_figure)
 export(covariance_heatmap_figure)
 export(create_figures)
 export(hdi_interval_figure)
+export(impact_heatmap_figure)
 export(interaction_network_figure)
 export(linear_tobit_figure)
 export(load_model)

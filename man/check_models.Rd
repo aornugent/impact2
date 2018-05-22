@@ -9,7 +9,7 @@ check_models(model = "m1")
 \arguments{
 \item{path}{Directory to save model outputs, defaults to /models.}
 
-\item{model}{m0-m6, defaults to all.}
+\item{model}{m0-m3, defaults to all.}
 }
 \description{
 Having used \code{run_models()}, we can now evaluate the convergence of

@@ -4,7 +4,7 @@
 \alias{interaction_network_figure}
 \title{Interaction network figure}
 \usage{
-interaction_network_figure(model = "m6")
+interaction_network_figure(model = "m3")
 }
 \description{
 Filters between species covariance matrices for significant (non-zero)

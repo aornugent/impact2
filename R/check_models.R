@@ -4,7 +4,7 @@
 #' the model and a variety of posterior predictive checks. These results
 #' are output to the console.
 #'
-#' @param model m0-m6, defaults to all.
+#' @param model m0-m3, defaults to all.
 #' @param path  Directory to save model outputs, defaults to /models.
 #'
 #' @usage check_models(model = "m1")
@@ -12,7 +12,7 @@
 #' @export
 
 check_models <- function(
-  models = c("m0", "m1", "m2", "m3", "m4", "m5", "m6"),
+  models = c("m0", "m1", "m2", "m3"),
   path = "models/",
   model_output = NA, ...) {
 
@@ -40,7 +40,7 @@ check_models <- function(
 #'
 #' Loads model output from .Rdata file.
 #'
-#' @param model m0-m6, defaults to all.
+#' @param model m0-m3, defaults to all.
 #' @param path  Directory to save model outputs, defaults to /models.
 #'
 #' @usage model_output <- load_models(model = "m1", path = "models/")
@@ -86,7 +86,7 @@ convergence_check <- function(model_output) {
 
   # Extract model fit, summary and time
   fit <- model_output$stan_output
-  summary <- data.frame(rstan::summary(fit)$summary)
+  summary <- model_output$model_summary
   time <- max(rowSums(rstan::get_elapsed_time(fit)))
 
   # Print results
@@ -172,7 +172,10 @@ posterior_check <- function(model_output) {
   printf("R-squared of predicted abundances = %.2f", abun_Rsq)
 }
 
-#' Extract parameters
+
+
+
+#' Extract parameters by summarising samples - NOT USED
 #'
 #' Extract samples from model output and calculate a summary statistic for
 #' each parameter

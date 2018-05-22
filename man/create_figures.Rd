@@ -23,8 +23,10 @@ Figures include:
 \enumerate{
 \item{a highest-density interval summary of logistic regression (m0)}
 \item{linear tobit predictions of species cover along a fertility gradient
-(m1-6)}
-\item{heatmaps of between species covariances (m3-6)}
-\item{network diagrams of negative interactions between species (m3-6)}
+(m1-3)}
+\item{heatmaps of between species covariances (m2 & m3)}
+\item{network diagrams of negative interactions between species (m1-3)}
+\item{density plot of changes in negative interactions between treatments (m2 & m3)}
+\item{trait-covariance correlation plots, varying by treatment (m3)}
 }
 }

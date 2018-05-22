@@ -8,9 +8,11 @@
 #' \enumerate{
 #'  \item{a highest-density interval summary of logistic regression (m0)}
 #'  \item{linear tobit predictions of species cover along a fertility gradient
-#'  (m1-6)}
-#'  \item{heatmaps of between species covariances (m3-6)}
-#'  \item{network diagrams of negative interactions between species (m3-6)}
+#'  (m1-3)}
+#'  \item{heatmaps of between species covariances (m2 & m3)}
+#'  \item{network diagrams of negative interactions between species (m1-3)}
+#'  \item{density plot of changes in negative interactions between treatments (m2 & m3)}
+#'  \item{trait-covariance correlation plots, varying by treatment (m3)}
 #' }
 #'
 #' @param model m0-m6, defaults to all.
@@ -21,9 +23,9 @@
 #' @export
 
 create_figures <-  function(
-  models = c("m0", "m1", "m2", "m3", "m4", "m5", "m6"),
+  models = c("m0", "m1", "m2", "m3"),
   path = "models/",
-  figs = 1:4, ...) {
+  figs = 1:6, ...) {
 
   for(fig in figs){
     for(model in models) {
@@ -33,24 +35,27 @@ create_figures <-  function(
         hdi_interval_figure(path)
 
       # Create linear predictions for tobit models
-      if(fig == 2 & !grepl("m0", model))
+      if(fig == 2)
         linear_tobit_figure(model, path)
 
       # Create covariance heatmap for joint tobit models
-      if(fig == 3 & !grepl("m0", model))
-        covariance_heatmap_figure(model, path)
+      if(fig == 3)
+        correlation_heatmap_figure(model, path)
 
       # Create interaction network diagram for joint tobit models
-      if(fig == 4 & !grepl("m0", model))
+      if(fig == 4)
         interaction_network_figure(model, path)
 
       # Create interaction density figure for models with varying covariances
       if(fig == 5)
-        covariance_density_figure(model, path)
+        covariance_distribution_figure(model, path)
 
       # Create trait covariance correlation plots
       if(fig == 6)
         trait_correlation_figure(model, path)
+
+      if(fig == 7)
+        impact_heatmap_figure(model, path)
 
     }
   }
@@ -70,7 +75,7 @@ hdi_interval_figure <- function(model = "m0", path){
   model_output <- load_model(model, path)
 
   # Get summary
-  pars <- extract_pars(model_output$stan_output,
+  pars <- extract_pars(model_output$model_summary,
                        names = c("diff_int", "diff_slope"),
                        index = c("year", "treatment"))
 
@@ -129,51 +134,67 @@ linear_tobit_figure <- function(model, path) {
   # Load model
   model_output <- load_model(model, path)
 
+  # Get species origin
+  origin <- select(cover, species, introduced) %>%
+    distinct() %>%
+    left_join(model_output$data_list$species_list, .)
+
   # Extract species coefficients
-  if(grepl("m3|m5", model)) {
-   species_coef <- extract_pars(model_output$stan_output,
+  if(grepl("m2", model)) {
+   species_coef <- extract_pars(model_output$model_summary,
       pars = c("B"),
       index = c("species", "coef")) %>%
      filter(parameter == "B") %>%
       mutate(coef = factor(coef, labels = c("int", "fert", "rain")),
            fence = "All",
            treatment = "All")
-  }
-
-  if(grepl("m4|m6", model)) {
+  } else if(grepl("m1|m3", model)) {
     # Get environmental covariates
     env_covariates <- model_output$data_list$env_covariates %>%
       select(treatment_id, fence, treatment) %>%
       distinct()
 
-    species_coef <- extract_pars(model_output$stan_output,
+    species_coef <- extract_pars(model_output$model_summary,
                                  pars = c("B"),
                                  index = c("treatment_id", "species", "coef")) %>%
       filter(parameter == "B") %>%
       mutate(coef = factor(coef, labels = c("int", "fert", "rain"))) %>%
       left_join(., env_covariates)
+  } else {
+    printf("Linear predictions only defined for tobit models (m1-3)")
+    return(NULL)
   }
 
+
   # Predict values
-  pred_cover <- pred_cover(species_coef, range = 2.5)
+  pred_cover <- pred_cover(species_coef, range = 2.5) %>%
+    left_join(., origin, by = c("species" = "species_id"))
 
   scale <- min(c(ceiling(max(pred_cover$mean)), 100))
 
-  p <- ggplot(pred_cover, aes(x = x, group = species)) +
+  p <- ggplot(pred_cover,
+              aes(x = x,
+                  group = species,
+                  linetype = factor(introduced))) +
     geom_line(
       aes(y = mean),
-      size = 1,
-      alpha = 0.3) +
+      size = .8,
+      alpha = 0.4,
+      show.legend = T) +
     geom_hline(
       aes(yintercept = 0),
-      colour = "red") +
+      colour = "red",
+      show.legend = F) +
     facet_grid(treatment ~ fence) +
     coord_cartesian(ylim = c(-scale, scale)) +
+    scale_linetype_manual(values = c("dashed", "solid")) +
     labs(
-      x = "Total nitrogen (standardised)",
-      y = "Latent performance (uncensored)") +
+      x = "Fertility (standardised)",
+      y = "Latent performance (uncensored)",
+      linetype = "Nonnative") +
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
-    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    theme(legend.position="right")
 
   # Save plot
   filename <- paste0("figures/", model, "_linear_tobit_predictions.png")
@@ -235,8 +256,8 @@ covariance_heatmap_figure <- function(model, path) {
     distinct()
 
   # Models have different number of treatments
-  if(grepl("m3|m4", model)) {
-    Sigma <- extract_pars(model_output$stan_output,
+  if(grepl("m1", model)) {
+    Sigma <- extract_pars(model_output$model_summary,
                           c("Sigma"),
                           index = c("species_a", "species_b")) %>%
       filter(parameter == "Sigma") %>%
@@ -254,8 +275,8 @@ covariance_heatmap_figure <- function(model, path) {
       filter(species_b <= species_a)
 
 
-  } else if(grepl("m5|m6", model)) {
-    Sigma <- extract_pars(model_output$stan_output,
+  } else if(grepl("m2|m3", model)) {
+    Sigma <- extract_pars(model_output$model_summary,
                           c("Sigma"),
                           index = c("treatment_id", "species_a", "species_b")) %>%
       filter(parameter == "Sigma") %>%
@@ -277,7 +298,7 @@ covariance_heatmap_figure <- function(model, path) {
                as.numeric(as.factor(species_b)) > as.numeric(as.factor(species_a))))
 
   } else {
-    printf("Heatmaps only defined for models with interactions (m3-m6)")
+    printf("Heatmaps only defined for models with interactions (m1-3)")
     return(NULL)
   }
 
@@ -305,7 +326,7 @@ covariance_heatmap_figure <- function(model, path) {
       legend.position = "right",
       legend.key.height = unit(1.6, "cm"))
 
-  if(grepl("m5|m6", model)) {
+  if(grepl("m2|m3", model)) {
     p <- p +
       facet_wrap(~ fence) +
       annotate("segment", x = 0.5, xend = n + 0.5,
@@ -324,6 +345,313 @@ covariance_heatmap_figure <- function(model, path) {
   print(p)
 }
 
+
+#' Correlation heatmap figure
+#'
+#' Creates an S x S heatmap of covariances between species. Red is negative,
+#' blue is positive.
+#'
+#' @usage correlation_heatmap_figure(model = "m3")
+#'
+#' @importFrom forcats fct_reorder
+#' @export
+
+correlation_heatmap_figure <- function(model, path) {
+
+  # Load model
+  model_output <- load_model(model, path)
+
+  species_list <- model_output$data_list$species_list
+  n = max(species_list$species_id)
+
+  env_covariates <- model_output$data_list$env_covariates %>%
+    select(treatment_id, fence, treatment) %>%
+    distinct()
+
+  # Models have different number of treatments
+  if(grepl("m1", model)) {
+    sigma <- extract_pars(model_output$model_summary,
+                          c("sigma"),
+                          index = "species") %>%
+      filter(parameter == "sigma") %>%
+      mutate(variance = mean^2) %>%
+      select(species, variance)
+
+    Omega <- extract_pars(model_output$model_summary,
+                          c("Omega"),
+                          index = c("species_a", "species_b")) %>%
+      filter(parameter == "Omega") %>%
+      left_join(., sigma, by = c("species_a" = "species")) %>%
+      left_join(., sigma, by = c("species_b" = "species")) %>%
+      left_join(., species_list, by = c("species_a" = "species_id")) %>%
+      left_join(., species_list, by = c("species_b" = "species_id"))
+
+
+    # Order species by magnitude of Correlation
+    Omega_ordered <- mutate(Omega,
+                            species.x = fct_reorder(species.x, variance.x, .desc = T),
+                            species.y = fct_reorder(species.y, variance.y, .desc = T),
+                            species_a = as.numeric(species.x),
+                            species_b = as.numeric(species.y),
+                            mean = ifelse(species_a == species_b, 0, mean)) %>%
+      filter(species_b <= species_a)
+
+
+
+  } else if(grepl("m2|m3", model)) {
+    sigma <- extract_pars(model_output$model_summary,
+                          c("sigma"),
+                          index = c("treatment_id", "species")) %>%
+      filter(parameter == "sigma")
+
+
+    Omega <- extract_pars(model_output$model_summary,
+                          c("Omega"),
+                          index = c("treatment_id", "species_a", "species_b")) %>%
+      filter(parameter == "Omega") %>%
+      left_join(., species_list, by = c("species_a" = "species_id")) %>%
+      left_join(., species_list, by = c("species_b" = "species_id")) %>%
+      left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id")) %>%
+      mutate(treatment_name = paste(fence, treatment)) %>%
+      group_by(species_a) %>%
+      mutate(total_correlation_a = sum(mean)) %>%
+      group_by(species_b) %>%
+      mutate(total_correlation_b = sum(mean)) %>%
+      ungroup()
+
+    # Order species by magnitude of Correlation
+    Omega_ordered <- mutate(Omega,
+                            species.x = fct_reorder(species.x, total_correlation_a, .desc = F),
+                            species.y = fct_reorder(species.y, total_correlation_b, .desc = F),
+                            species_a = as.numeric(species.x),
+                            species_b = as.numeric(species.y),
+                            mean = ifelse(species_a == species_b, 0, mean)) %>%
+      filter(
+        ifelse(grepl("Control", treatment_name),
+               as.numeric(as.factor(species_b)) < as.numeric(as.factor(species_a)),
+               as.numeric(as.factor(species_b)) > as.numeric(as.factor(species_a))))
+
+  } else {
+    printf("Heatmaps only defined for models with interactions (m1-3)")
+    return(NULL)
+  }
+
+
+  p <- ggplot(Omega_ordered,
+              aes(
+                x = species.x,
+                y = species.y,
+                fill = mean)) +
+    geom_tile() +
+    scale_fill_gradient2(
+      low = "red",
+      mid = "white",
+      high = "blue") +
+    labs(x = "",
+         y = "",
+         fill = "",
+         title = "Correlation between species") +
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        vjust = 0,
+        hjust = 1),
+       axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      legend.position = "left",
+      legend.key.height = unit(1.6, "cm"))
+
+  if(grepl("m2|m3", model)) {
+    p <- p +
+      facet_wrap(~ fence) +
+      annotate("segment", x = 0.5, xend = n + 0.5,
+               y = 0.5, yend = n + 0.5, linetype = "dashed") +
+      annotate("text", x = 5, y = n - 2, label = "Removal") +
+      annotate("text", x = n - 4, y = 3.5, label = "Control") +
+      annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+  }
+
+  # Save plot
+  filename <- paste0("figures/", model, "_correlation_heatmap.png")
+  ggsave(filename = filename, plot = p,
+         width = 12, height = 9, dpi = 600)
+
+  # Display plot
+  print(p)
+
+  # Plot variance only
+  variance <- filter(Omega_ordered, species_a == species_b) %>%
+    mutate(species.x = "Variance")
+
+  v <- ggplot(variance, aes(x = species.x, y = species.y, fill = variance.x)) +
+    geom_tile() +
+    scale_fill_gradient(
+      low = "white",
+      high = "red") +
+    labs(x = "",
+         y = "",
+         fill = "",
+         title = "Species variance") +
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        vjust = 0,
+        hjust = 1),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      legend.position = "right",
+      legend.key.height = unit(1.6, "cm"),
+      plot.title = element_text(hjust = 0.5),
+      aspect.ratio = 30)
+
+  filename <- paste0("figures/", model, "_variance_heatmap.png")
+  ggsave(filename = filename, plot = v,
+         width = 12, height = 9, dpi = 600)
+
+
+  # Or with barplot
+  v2 <- ggplot(variance, aes(x = species_b, y = variance)) +
+    geom_bar(stat = "identity") +
+    coord_flip(expand = F) +
+    theme(axis.text.y = element_blank()) +
+    labs(x = "",
+         y = "Variance")
+
+  filename <- paste0("figures/", model, "_variance_barplot.png")
+  ggsave(filename = filename, plot = v2,
+         width = 12, height = 9, dpi = 600)
+
+}
+
+
+#' Impact heatmap figure
+#'
+#' Creates an S x S heatmap of covariances between species. Red is negative,
+#' blue is positive.
+#'
+#' @usage impact_heatmap_figure(model = "m3")
+#'
+#' @importFrom forcats fct_reorder
+#' @export
+
+impact_heatmap_figure <- function(model, path) {
+
+  # Load model
+  model_output <- load_model(model, path)
+
+  species_list <- model_output$data_list$species_list
+  n = max(species_list$species_id)
+
+  env_covariates <- model_output$data_list$env_covariates %>%
+    select(treatment_id, fence, treatment) %>%
+    distinct()
+
+  # Models have different number of treatments
+  if(grepl("m1", model)) {
+    sigma <- extract_pars(model_output$model_summary,
+                          "sigma", "species") %>%
+      filter(parameter == "sigma") %>%
+      select(species, sd = mean)
+
+    Omega <- extract_pars(model_output$model_summary,
+                          c("Omega"),
+                          index = c("species_a", "species_b")) %>%
+      filter(parameter == "Omega") %>%
+      left_join(., species_list, by = c("species_a" = "species_id")) %>%
+      left_join(., species_list, by = c("species_b" = "species_id")) %>%
+      mutate(treatment_name = "Average across all treatments")
+
+    impact <- left_join(Omega, sigma, by = c("species_a" = "species")) %>%
+      left_join(., sigma, by = c("species_b" = "species")) %>%
+      mutate(impact = ifelse(species_a == species_b,
+                             0, (sd.y * mean) / sd.x))
+    # Order species by magnitude of Correlation
+    # impact_ordered <- mutate(impact,
+    #                         species.x = fct_reorder(species.x, total_impact_a, .desc = F),
+    #                         species.y = fct_reorder(species.y, total_impact_b, .desc = F),
+    #                         species_a = as.numeric(species.x),
+    #                         species_b = as.numeric(species.y),
+    #                         impact = ifelse(species_a == species_b, 0, impact))
+
+
+  } else if(grepl("m2|m3", model)) {
+    Omega <- extract_pars(model_output$model_summary,
+                          c("Omega"),
+                          index = c("treatment_id", "species_a", "species_b")) %>%
+      filter(parameter == "Omega") %>%
+      left_join(., species_list, by = c("species_a" = "species_id")) %>%
+      left_join(., species_list, by = c("species_b" = "species_id")) %>%
+      left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id")) %>%
+      mutate(treatment_name = paste(fence, treatment)) %>%
+      group_by(species_a) %>%
+      mutate(total_correlation_a = sum(mean)) %>%
+      group_by(species_b) %>%
+      mutate(total_correlation_b = sum(mean)) %>%
+      ungroup()
+
+    # Order species by magnitude of Correlation
+    Omega_ordered <- mutate(Omega,
+                            species.x = fct_reorder(species.x, total_correlation_a, .desc = F),
+                            species.y = fct_reorder(species.y, total_correlation_b, .desc = F),
+                            species_a = as.numeric(species.x),
+                            species_b = as.numeric(species.y),
+                            mean = ifelse(species_a == species_b, 0, mean)) %>%
+      filter(
+        ifelse(grepl("Control", treatment_name),
+               as.numeric(as.factor(species_b)) < as.numeric(as.factor(species_a)),
+               as.numeric(as.factor(species_b)) > as.numeric(as.factor(species_a))))
+
+  } else {
+    printf("Heatmaps only defined for models with interactions (m1-3)")
+    return(NULL)
+  }
+
+
+  p <- ggplot(impact,
+              aes(
+                x = species.x,
+                y = species.y,
+                fill = impact)) +
+    geom_tile() +
+    scale_fill_gradient2(
+      low = "red",
+      mid = "white",
+      high = "blue") +
+    labs(x = "Species A",
+         y = "Species B",
+         fill = "",
+         title = "Impact of Species A on Species B") +
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        vjust = 0,
+        hjust = 1),
+      axis.ticks = element_blank(),
+      legend.position = "right",
+      legend.key.height = unit(1.6, "cm"))
+
+  if(grepl("m2|m3", model)) {
+    p <- p +
+      facet_wrap(~ fence) +
+      annotate("segment", x = 0.5, xend = n + 0.5,
+               y = 0.5, yend = n + 0.5, linetype = "dashed") +
+      annotate("text", x = 5, y = n - 2, label = "Removal") +
+      annotate("text", x = n - 4, y = 3.5, label = "Control") +
+      annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+  }
+
+  # Save plot
+  filename <- paste0("figures/", model, "_impact_heatmap.png")
+  ggsave(filename = filename, plot = p,
+         width = 12, height = 9, dpi = 600)
+
+  # Display plot
+  print(p)
+}
+
+
+
+
 #' Interaction network figure
 #'
 #' Filters between species covariance matrices for significant (non-zero)
@@ -331,7 +659,7 @@ covariance_heatmap_figure <- function(model, path) {
 #' are weighted by the magnitude of the interaction, but are only relative
 #' within a given network
 #'
-#' @usage interaction_network_figure(model = "m6")
+#' @usage interaction_network_figure(model = "m3")
 #' @import circlize
 #' @export
 
@@ -347,10 +675,10 @@ interaction_network_figure <- function(model, path) {
     distinct()
 
   # Models have different number of treatments
-  if(grepl("m3|m4", model)) {
+  if(grepl("m1", model)) {
     E = 1
 
-    Sigma <- extract_pars(model_output$stan_output,
+    Sigma <- extract_pars(model_output$model_summary,
                           c("Sigma"),
                           index = c("species_a", "species_b")) %>%
       mutate(treatment_id = 1) %>%
@@ -358,10 +686,10 @@ interaction_network_figure <- function(model, path) {
       left_join(., species_list, by = c("species_a" = "species_id")) %>%
       left_join(., species_list, by = c("species_b" = "species_id"))
   }
-  else if (grepl("m5|m6", model)) {
+  else if (grepl("m2|m3", model)) {
     E = max(env_covariates$treatment_id)
 
-    Sigma <- extract_pars(model_output$stan_output,
+    Sigma <- extract_pars(model_output$model_summary,
                         c("Sigma"),
                         index = c("treatment_id", "species_a", "species_b")) %>%
     filter(parameter == "Sigma") %>%
@@ -379,7 +707,7 @@ interaction_network_figure <- function(model, path) {
   factors <- 1:n
 
   # Scale covariances for figure
-  Sigma <- mutate(Sigma, interaction = mean / min(mean) * 2)
+  Sigma <- mutate(Sigma, interaction = mean / min(mean) * 4)
 
   for(e in 1:E){
 
@@ -475,11 +803,10 @@ interaction_network_figure <- function(model, path) {
 #' Creates density plots of covariances of selected species to compare change
 #' in interaction strength between treatments.
 #'
-#' @usage covaraiance_density_figure("m6",
-#' species = c("Avena.fatua", "Bromus.diandrus", "Acetosella.vulgaris))
+#' @usage covaraiance_density_figure("m6", species = c("Avena.fatua", "Bromus.diandrus", "Acetosella.vulgaris"))
 #' @export
 
-covariance_density_figure <- function(model, path,
+covariance_distribution_figure <- function(model, path,
                                       species = c("Avena.fatua",
                                                   "Bromus.diandrus",
                                                   "Acetosella.vulgaris")) {
@@ -487,19 +814,21 @@ covariance_density_figure <- function(model, path,
   # Load model
   model_output <- load_model(model, path)
 
+  species_list <- model_output$data_list$species_list
+
   env_covariates <- model_output$data_list$env_covariates %>%
     select(treatment_id, fence, treatment) %>%
     distinct()
 
   # Models have different number of treatments
-  if(!grepl("m5|m6", model)) {
+  if(!grepl("m2|m3", model)) {
     printf("Figure only defined for models with varying covariances")
-    break
+    return(NULL)
   }
 
   E = max(env_covariates$treatment_id)
 
-  Sigma <- extract_pars(model_output$stan_output,
+  Sigma <- extract_pars(model_output$model_summary,
                         c("Sigma"),
                         index = c("treatment_id", "species_a", "species_b")) %>%
     filter(parameter == "Sigma") %>%
@@ -507,32 +836,34 @@ covariance_density_figure <- function(model, path,
     left_join(., species_list, by = c("species_b" = "species_id")) %>%
     left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id"))
 
-  sp_cov <- filter(Sigma, species.x %in% species,
-                   species_a != species_b,
-                   mean <= 0,
-                   mean > min(mean)) %>%
-    mutate(treatment2 = paste(fence, treatment))
+  sp_cov <- Sigma %>%
+    filter(species.x %in% species,
+           species_a != species_b) %>%
+    group_by(species.x, fence, treatment) %>%
+    summarise(total = mean(mean),
+              ucl = quantile(mean, probs = 0.95),
+              lcl = quantile(mean, probs = 0.05))
 
-  p <- ggplot(sp_cov, aes(x = mean,
-                     group = treatment2,
-                     linetype = fence)) +
-    geom_density() +
-    geom_vline(aes(xintercept = 0), size = 1) +
-    facet_wrap(species.x ~ treatment, scales = "free_y", ncol = 2) +
-    coord_cartesian(expand = F) +
-    labs(x = "Between species covariance",
-         y = "Density",
+  s <- ggplot(sp_cov, aes(x = fence, linetype = treatment)) +
+    geom_point(aes(y = total), position = position_dodge(width = 0.3)) +
+    geom_errorbar(aes(ymin = lcl, ymax = ucl),
+                  position = position_dodge(width = 0.3),
+                  width = 0) +
+    facet_grid(~ species.x) +
+    coord_flip() +
+    labs(y = "Covariance",
+         x = "",
          linetype = "") +
-    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
-    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+    theme(
+      legend.position = "right"
+    )
 
-  # Save plot
-  filename <- paste0("figures/", model, "changing_covariance_density.png")
-  ggsave(filename = filename, plot = p,
+  filename <- paste0("figures/", model, "_covariance_distributions.png")
+  ggsave(filename = filename, plot = s,
          width = 12, height = 9, dpi = 600)
 
   # Display plot
-  print(p)
+  print(s)
 
 }
 
@@ -566,12 +897,12 @@ trait_correlation_figure <- function(model, path, trait_id = "Max.height"){
     distinct()
 
   # Models have different number of treatments
-  if(!grepl("m5|m6", model)) {
+  if(!grepl("m2|m3", model)) {
     printf("Figure only defined for models with varying covariances")
     break
   }
 
-  Sigma <- extract_pars(model_output$stan_output,
+  Sigma <- extract_pars(model_output$model_summary,
                         c("Sigma"),
                         index = c("treatment_id", "species_a", "species_b")) %>%
     filter(parameter == "Sigma") %>%
@@ -627,11 +958,7 @@ trait_correlation_figure <- function(model, path, trait_id = "Max.height"){
 #' c("species", "covariate", "treatment"))
 
 
-extract_pars <- function(fit, pars, index) {
-
-  # Get model summary
-  summary <- rstan::summary(fit)$summary %>%
-    as.data.frame()
+extract_pars <- function(summary, pars, index) {
 
   # Grep for desired parameter estimates
   suppressWarnings(estimates <- summary %>%
