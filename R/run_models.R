@@ -7,7 +7,17 @@
 #' ~0.4-0.9Gb and are not distributed. Previously saved analysis can be
 #' inspected using \code{check_models()} or loaded with \code{load_models()}.
 #'
-#' @param model m0-m6, defaults to all (~2hrs).
+#' Models include:
+#' \enumerate{
+#'  \item{M0: Logistic regression of the proportion of nonnative species cover}
+#'  \item{M1: Joint species model with varying intercepts and slopes, constant covariance}
+#'  \item{M2: Joint species model with constant intercepts and slopes, varying covariance}
+#'  \item{M3: Joint species model with varying intercepts, slopes and covariance}
+#' }
+#'
+#' M0, M1, and M3 are presented in the manuscript (O'Reilly-Nugent, et al. 2018)
+#'
+#' @param model m0-m3, defaults to all (~2hrs).
 #' @param path  Directory to save model outputs, defaults to /models.
 #' @param check auto-run model checks, boolean (default = T).
 #' @param ...   passes additional parameters to Stan models such as the LKJ shape prior and abundance threshold of the analysis.
@@ -17,7 +27,7 @@
 #' @export
 
 run_models <- function(
-  models = c("m0", "m1", "m2", "m3", "m4", "m5", "m6"),
+  models = c("m0", "m1", "m2", "m3"),
   path = "models/",
   check = T, ...) {
 
@@ -32,11 +42,11 @@ run_models <- function(
 
 #' Run Stan model
 #'
-#' Contains pre-processing and wraps \link[rstan] to run analyses using
+#' Pre-processes data and wraps \link{rstan} to run analyses using
 #' adaptive Hamiltonian Monte Carlo. Sensible default settings are provided,
 #' but can be tweaked as necessary.
 #'
-#' @param model one of c("m0", "m1", "m2", "m3", "m4", "m5", "m6")
+#' @param model one of c("m0", "m1", "m2", "m3")
 #' @param ... tuning parameters for Stan sampler
 #'
 #' @export
@@ -47,27 +57,16 @@ run_stan_model <- function(model, path, ...) {
   rstan::rstan_options(auto_write = TRUE)
   options(mc.cores = parallel::detectCores() - 1)
 
-  # FIGURE OUT ...
-  # if(cores = NULL){
-  #   options(mc.cores = parallel::detectCores() - 1)
-  # }
-
   # Do data prep
   data_list <- format_data(model, ...)
-
-  # FIGURE OUT ...
-  # Pass number of years, currently hard coded
 
   # Get appropriate file
   model_file <- switch(
     model,
-    m0 = "models/m0_prop_logit",
-    m1 = "models/m1_independent_species_tobit.stan",
-    m2 = "models/m2_independent_species_tobit_varying_intercepts_slopes.stan",
-    m3 = "models/m3_interacting_species_tobit.stan",
-    m4 = "models/m4_interacting_species_tobit_varying_intercepts_slopes.stan",
-    m5 = "models/m5_interacting_species_tobit_varying_interactions.stan",
-    m6 = "models/m6_interacting_species_tobit_varying_intercepts_slopes_covariance.stan"
+    m0 = "models/m0_proportional_logistic_regression.stan",
+    m1 = "models/m1_interacting_species_tobit_varying_intercepts_slopes.stan",
+    m2 = "models/m2_interacting_species_tobit_varying_interactions.stan",
+    m3 = "models/m3_interacting_species_tobit_varying_intercepts_slopes_covariance.stan"
   )
 
   # Pre-compile model
@@ -95,11 +94,12 @@ run_stan_model <- function(model, path, ...) {
     control = list(max_treedepth = 15)
   )
 
-  # FIGURE OUT ...
-  # rstan::stan(control = ...)
+  summary <- rstan::summary(mod)$summary %>%
+    as.data.frame()
 
   # Append data_list to model output
-  model_output = list(stan_output = mod,
+  model_output = list(model_summary = summary,
+                      stan_output = mod,
                       data_list = data_list)
 
   # Save model output
@@ -124,8 +124,8 @@ run_stan_model <- function(model, path, ...) {
 
 format_data <- function(model,
                         years = c(2013:2016),
-                        threshold = 0.15,
-                        subset = "presence",
+                        threshold = 0.90,
+                        subset = "abundance",
                         lkj_prior = 25, ...) {
 
   # Load dataset
@@ -174,6 +174,8 @@ format_data <- function(model,
 
   if(model == "m0"){
     # Format data for logistic regression of proportion of exotic species.
+    env_covariates <- select(env_covariates, -quadrat_id) %>%
+      unique()
 
     # Calculate proportion of exotic species
     prop <- group_by(dat, year, plot_id, introduced) %>%
@@ -187,7 +189,7 @@ format_data <- function(model,
                      prop_scaled = (prop_cover * (n() - 1) + 0.5)/n(),
                      logit = log(prop_scaled /(1 - prop_scaled)))
 
-    y = logit$logit
+    y = logit$prop_scaled
   }  else {
     # Format data for tobit regression of cover values.
 
@@ -203,6 +205,7 @@ format_data <- function(model,
                          species %in% unlist(species_list$species)) %>%
                   tidyr::spread(species, cover, fill = 0)
 
+    # Drop unlabelled columns
     y = as.matrix(cover_wide[, c(-1, -2, -3)])
   }
 
@@ -225,8 +228,10 @@ format_data <- function(model,
       treatment = env_covariates$treatment_id,
       plot = plots,
       site = sites,
+      year = env_covariates$year_id,
       N_plots = max(plots),
       N_sites = max(sites),
+      N_years = max(env_covariates$year_id),
       shape_prior = lkj_prior,
       species_list = species_list,
       env_covariates = env_covariates)
