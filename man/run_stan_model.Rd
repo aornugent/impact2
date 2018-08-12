@@ -12,7 +12,7 @@ run_stan_model(model, path, ...)
 \item{...}{tuning parameters for Stan sampler}
 }
 \description{
-Contains pre-processing and wraps \link{rstan} to run analyses using
+Pre-processes data and wraps \link{rstan} to run analyses using
 adaptive Hamiltonian Monte Carlo. Sensible default settings are provided,
 but can be tweaked as necessary.
 }

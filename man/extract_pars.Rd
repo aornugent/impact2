@@ -4,17 +4,20 @@
 \alias{extract_pars}
 \title{Extract parameter estimates}
 \usage{
-pars <- extract_par(model_output, c("B"),
-c("species", "covariate", "treatment"))
+extract_pars(summary, pars, index)
 }
 \arguments{
+\item{summary}{output of a Stan model summary}
+
 \item{pars}{vector of parameter names}
 
 \item{index}{vector of labels for parameter indexes}
-
-\item{fit}{output of a Stan model}
 }
 \description{
-Stan output provides summaries of parameter estimates, this can be
-faster than working directly with samples
+Stan output provides summaries of parameter estimates, this can be faster than working directly with samples
+}
+\examples{
+pars <- extract_par(fit = model_output$model_summary,
+                          pars = c("B"),
+                          index = c("species", "covariate", "treatment"))
 }

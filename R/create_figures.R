@@ -27,117 +27,242 @@ create_figures <-  function(
   path = "models/",
   figs = 1:6, ...) {
 
-  for(fig in figs){
-    for(model in models) {
+  for(model in models) {
+
+    # Load model
+    model_output <- load_model(model, path)
+
+    for(fig in figs){
 
       # Create HDI figure for logistic regression
-      if(fig == 1 & model == "m0")
-        hdi_interval_figure(path)
+      if(fig == 1 & model == "m0") {
+        nonnative_dominance_figures(model_output)
+        figs = 1
+      }
 
       # Create linear predictions for tobit models
       if(fig == 2)
-        linear_tobit_figure(model, path)
+        linear_tobit_figure(model, model_output)
 
       # Create covariance heatmap for joint tobit models
       if(fig == 3)
-        correlation_heatmap_figure(model, path)
+        correlation_corrplot_figure(model, model_output)
 
       # Create interaction network diagram for joint tobit models
       if(fig == 4)
-        interaction_network_figure(model, path)
+        interaction_network_figure(model, model_output)
 
       # Create interaction density figure for models with varying covariances
       if(fig == 5)
-        covariance_distribution_figure(model, path)
+        covariance_distribution_figure(model, model_output)
 
       # Create trait covariance correlation plots
-      if(fig == 6)
-        trait_correlation_figure(model, path)
+      if(fig == 6 & model == "m3")
+        trait_correlation_figure(model)
 
-      if(fig == 7)
-        impact_heatmap_figure(model, path)
+      # if(fig == 7)
+      #   impact_heatmap_figure(model, model_output)
 
     }
   }
 }
 
-#' Highest density interval figure
+#' Nonnative dominance
 #'
-#' Summarises posterior intervals in a whisker plot. Only defined for logistic
-#' regression of the proportion of exotic species (m0).
+#' Plots mean regression lines for each treatment and annual change in
+#' nonnative-fertility relationship following fencing.
 #'
-#' @usage hdi_interval_figure(model = "m0")
+#' @usage dominance_figures(model = "m0")
+#'
+#' @importFrom tidyr gather spread unite
+#' @importFrom viridis scale_colour_viridis
+#'
 #' @export
 
-hdi_interval_figure <- function(model = "m0", path){
+nonnative_dominance_figures <- function(model_output){
 
-  # Load model
-  model_output <- load_model(model, path)
+  # Set up covariates
+  years <- data.frame(y = 1:6,
+                      year = c(2010, 2011, 2012, 2013, 2015, 2016))
 
-  # Get summary
-  pars <- extract_pars(model_output$model_summary,
-                       names = c("diff_int", "diff_slope"),
-                       index = c("year", "treatment"))
+  treatments <- data.frame(t = 1:4,
+                           treatment = c("Unslashed Fenced", "Slashed Fenced",
+                                         "Unslashed Grazed", "Slashed Grazed"),
+                           slash = c("Unslashed", "Slashed",
+                                     "Unslashed", "Slashed"),
+                           fence = c("Fenced", "Fenced", "Grazed", "Grazed"))
 
-  # Label years, treatments
-  pars <- mutate(pars,
-    year = factor(year, labels = c(2010:2013, 2015, 2016)),
-    treatment = factor(treatment, labels = c("Control", "Slash")),
-    parameter = factor(parameter, labels = c("Intercept", "Slope")))
+  # Extract raw data
+  raw_data <- data.frame(x = model_output$data_list$X[, 2],
+                   y_raw = model_output$data_list$y_observed,
+                   y_scaled = unlogit(model_output$data_list$y_observed),
+                   t = model_output$data_list$treatment,
+                   y = model_output$data_list$year) %>%
+    left_join(., treatments) %>%
+    left_join(., years)
 
-  # Set y-scale
-  scale <- ceiling(max(pars$conf_high))
 
-  p <- ggplot(pars, aes(x = year, y = mean)) +
-    geom_point(size = 2) +
-    geom_errorbar(
-      aes(
-        ymin = conf_low,
-        ymax = conf_high),
-      width = 0,
-      size = 1,
-      alpha = 0.3) +
-    geom_hline(
-      aes(yintercept = 0),
-      linetype = "dashed") +
-    facet_grid(parameter ~ treatment) +
-    theme(
-      axis.text.x = element_text(
-        angle = 45,
-        hjust = 1,
-        vjust = 1)) +
-    coord_cartesian(ylim = c(-scale, scale)) +
-    labs(
-      x = "Year",
-      y = "Difference in posterior means (fence - open)",
-      title = "Effect of fencing on exotic species dominance") +
+  # Extract mean regression coefficients
+  mean_slope <- extract_pars(model_output$model_summary,
+                             pars = c("mu_int", "mu_slope"),
+                             index = "t")
+
+  # Generate predicted regression lines
+  pred <- select(mean_slope, -conf_low, -conf_high) %>%
+    spread(parameter, mean) %>%
+    expand_grid(x = seq(-2.2, 2.2, len = 1000), .) %>%
+    mutate(y_raw = mu_int + mu_slope * x,
+           y_scale = unlogit(y_raw)) %>%
+    left_join(., treatments)
+
+  # Plot against data
+  p1 <- ggplot(data = raw_data,
+               aes(x = x,
+                   y = y_raw,
+                   group = treatment)) +
+    geom_point(aes(shape = treatment,
+                   colour = x),
+               fill = "white",
+               size = 3.5) +
+    geom_path(data = pred,
+              aes(x = x,
+                  y = y_raw,
+                  linetype = treatment),
+              size = 2) +
+    coord_cartesian(ylim = c(-4, 6), expand = F) +
+    scale_colour_viridis() +
+    scale_shape_manual(values = c(19, 17, 21, 25)) +
+    scale_linetype_manual(values = c(1, 5, 4, 3)) +
+    labs(x = "Fertility (scaled)",
+         y = "Proportion of nonnative species (logit scale)",
+         color = "",
+         shape = "",
+         linetype = "") +
+    guides(shape = guide_legend(nrow = 4,
+                                keywidth = 5),
+           color = F) +
+    theme(legend.position = c(1, 0),
+          legend.justification = c(1, 0))
+
+  # Extract annual regression coefficients
+  slope <- extract_pars(model_output$model_summary,
+                        pars = c("B_int", "B_slope"),
+                        index = c("t", "y")) %>%
+    left_join(., years) %>%
+    left_join(., treatments) %>%
+    gather(quantile, value, mean:conf_high) %>%
+    unite(parameter, parameter, quantile, remove = T) %>%
+    spread(parameter, value)
+
+  # Plot change in intercepts overtime, coloured by slope
+  p2 <- ggplot(slope,
+               aes(x = year,
+                   y = B_int_mean,
+                   group = treatment)) +
+    geom_line(aes(color = B_slope_mean),
+              size = 1.8) +
+    geom_line(aes(y = B_int_conf_high,
+                  linetype = fence))+
+    geom_line(aes(y = B_int_conf_low,
+                  linetype = fence)) +
+    geom_point(aes(shape = treatment,
+                   color = B_slope_mean),
+               fill = "white",
+               size = 4.5) +
+    geom_ribbon(aes(ymin = B_int_conf_low,
+                    ymax = B_int_conf_high,
+                    color = NULL),
+                alpha = 0.05) +
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
-    annotate("segment", x = -Inf, xend = -Inf, y = Inf, yend = -Inf)
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    coord_cartesian(xlim = c(2010, 2016.2), ylim = c(-2.4, 5), expand = F) +
+    scale_colour_viridis() +
+    scale_shape_manual(values = c(19, 17, 21, 25)) +
+    facet_wrap(~ slash, ncol = 1) +
+    labs(x = "Year",
+         y = "Logitstic intercept",
+         color = "Logistic slope",
+         linetype = "") +
+    guides(shape = F,
+           color = guide_colourbar(title.position = "top",
+                                   title.hjust = 0.5,
+                                   direction = "horizontal",
+                                   barwidth = 8,
+                                   barheight = 0.8),
+           linetype = guide_legend(nrow = 2)) +
+    theme(legend.box = "horizontal",
+          legend.position = c(1, 0),
+          legend.justification = c(1, 0),
+          legend.title = element_text(size = 14))
 
-  # Save plot
-  filename <- paste0("figures/", model, "_hdi_interval.png")
-  ggsave(filename = filename, plot = p, dpi = 600)
+  # Save and print
+  p <- grid.arrange(label(p1, "A)"), label(p2, "B)"),
+               nrow = 1, widths = c(1.5, 1))
 
-  # Display plot
-  print(p)
+
+  ggsave(p, filename = "figures/S3_logistic_regression.png",
+         height = 8, width = 14, device = "png", dpi = 600)
+
+
+  pred_year <-
+    extract_pars(model_output$model_summary,
+      pars = c("B_int", "B_slope"),
+      index = c("t", "y")) %>%
+    left_join(., years) %>%
+    left_join(., treatments) %>%
+    select(-conf_low, -conf_high) %>%
+    spread(parameter, mean) %>%
+    expand_grid(x = seq(-2.2, 2.3, len = 1000), .) %>%
+    mutate(y_raw = B_int + B_slope * x,
+      y_scale = unlogit(y_raw))
+
+  # Alternative plot with slopes over time
+  p3 <- ggplot(raw_data, aes(x = x, y = y_raw)) +
+    geom_line(data = pred_year,
+                aes(group = t,
+                    linetype = fence),
+                size = 1.4) +
+    geom_point(aes(fill = fence),
+               shape = 21,
+               size = 4) +
+    facet_grid(slash ~ year) +
+    scale_fill_manual(values = c("black", "white")) +
+    coord_cartesian(xlim = c(-2.2, 2.3), ylim = c(-4.1, 6.9), expand = F) +
+    labs(x = "Fertility (scaled)",
+         y = "Proportion of nonnative species (logit scale)",
+         fill = "",
+         linetype = "") +
+    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    theme(legend.position = c(1, 0.51),
+          legend.justification = c(1, 0),
+          legend.key.width = unit(1.2, "cm"))
+
+
+  # Save and print
+  ggsave(p3, filename = "figures/F1_logistic_regression_by_year.png",
+         height = 5, width = 14, device = "png", dpi = 600)
+  print(p3)
+
+
+
 }
+
 
 #' Linear tobit predictions figure
 #'
 #' Predicts the latent values of species abundance along a fertility gradient.
 #'
 #' @usage linear_tobit_figure(model = "m1")
+#'
+#' @importFrom viridis scale_colour_viridis
 #' @export
 
-linear_tobit_figure <- function(model, path) {
-
-  # Load model
-  model_output <- load_model(model, path)
+linear_tobit_figure <- function(model, model_output) {
 
   # Get species origin
-  origin <- select(cover, species, introduced) %>%
-    distinct() %>%
-    left_join(model_output$data_list$species_list, .)
+  species <- model_output$data_list$species_list %>%
+    mutate(origin = ifelse(introduced == 1, "Nonnative", "Native"))
 
   # Extract species coefficients
   if(grepl("m2", model)) {
@@ -166,39 +291,52 @@ linear_tobit_figure <- function(model, path) {
   }
 
 
-  # Predict values
+  # Predict values, highlight species with positive slopes
   pred_cover <- pred_cover(species_coef, range = 2.5) %>%
-    left_join(., origin, by = c("species" = "species_id"))
+    left_join(., species, by = c("species" = "species_id"))
 
-  scale <- min(c(ceiling(max(pred_cover$mean)), 100))
+  scale <- min(c(ceiling(max(pred_cover$mean)), 1))
 
   p <- ggplot(pred_cover,
               aes(x = x,
-                  group = species,
-                  linetype = factor(introduced))) +
-    geom_line(
-      aes(y = mean),
-      size = .8,
-      alpha = 0.4,
-      show.legend = T) +
-    geom_hline(
-      aes(yintercept = 0),
-      colour = "red",
-      show.legend = F) +
+                  group = desc(species))) +
+    geom_line(aes(y = mean,
+                  color = as.factor(fert),
+                  linetype = origin),
+              size = 1.5) +
+    geom_hline(aes(yintercept = 0),
+               colour = "black") +
     facet_grid(treatment ~ fence) +
-    coord_cartesian(ylim = c(-scale, scale)) +
-    scale_linetype_manual(values = c("dashed", "solid")) +
-    labs(
-      x = "Fertility (standardised)",
-      y = "Latent performance (uncensored)",
-      linetype = "Nonnative") +
+    coord_cartesian(xlim = c(-2, 2),
+                    ylim = c(-1, 1),
+                    expand = F) +
+    scale_linetype_manual(values = c("twodash", "solid")) +
+    scale_colour_viridis(begin = 0.2, discrete = T) +
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
     annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
-    theme(legend.position="right")
+    labs(x = "Fertility (scaled)",
+      y = "Latent habitat suitability",
+      linetype = "",
+      color = "Tobit slope") +
+    guides(color = F,
+        # guide_colourbar(title.position = "top",
+        #                            title.hjust = 0.5,
+        #                            direction = "horizontal",
+        #                            barwidth = 8,
+        #                            barheight = 0.8,
+        #                            order = 1),
+           linetype = guide_legend(nrow = 2,
+                                   keywidth = 4)) +
+    theme(legend.box = "horizontal",
+          legend.position = c(1, 0),
+          legend.justification = c(1, 0),
+          legend.title = element_text(size = 14))
+
 
   # Save plot
   filename <- paste0("figures/", model, "_linear_tobit_predictions.png")
-  suppressMessages(ggsave(filename = filename, plot = p, dpi = 600))
+  ggsave(filename = filename, plot = p,
+         height = 7, width = 7, device = "png", dpi = 600)
 
   # Display plot
   print(p)
@@ -243,10 +381,7 @@ pred_cover <- function(estimates,
 #' @importFrom forcats fct_reorder
 #' @export
 
-covariance_heatmap_figure <- function(model, path) {
-
-  # Load model
-  model_output <- load_model(model, path)
+covariance_heatmap_figure <- function(model, model_output) {
 
   species_list <- model_output$data_list$species_list
   n = max(species_list$species_id)
@@ -339,7 +474,7 @@ covariance_heatmap_figure <- function(model, path) {
   # Save plot
   filename <- paste0("figures/", model, "_covariance_heatmap.png")
   ggsave(filename = filename, plot = p,
-         width = 12, height = 9, dpi = 600)
+         width = 10, height = 9, dpi = 600)
 
   # Display plot
   print(p)
@@ -353,15 +488,17 @@ covariance_heatmap_figure <- function(model, path) {
 #'
 #' @usage correlation_heatmap_figure(model = "m3")
 #'
+#' @importFrom gridExtra grid.arrange
 #' @importFrom forcats fct_reorder
 #' @export
 
-correlation_heatmap_figure <- function(model, path) {
+correlation_heatmap_figure <- function(model, model_output) {
 
-  # Load model
-  model_output <- load_model(model, path)
+  species_list <- model_output$data_list$species_list %>%
+    mutate(species = ifelse(introduced == 1,
+                            paste0(gsub("\\.", " ", species), "*"),
+                            paste0(gsub("\\.", " ", species), " ")))
 
-  species_list <- model_output$data_list$species_list
   n = max(species_list$species_id)
 
   env_covariates <- model_output$data_list$env_covariates %>%
@@ -396,9 +533,8 @@ correlation_heatmap_figure <- function(model, path) {
                             mean = ifelse(species_a == species_b, 0, mean)) %>%
       filter(species_b <= species_a)
 
-
-
   } else if(grepl("m2|m3", model)) {
+
     sigma <- extract_pars(model_output$model_summary,
                           c("sigma"),
                           index = c("treatment_id", "species")) %>%
@@ -428,7 +564,7 @@ correlation_heatmap_figure <- function(model, path) {
                             mean = ifelse(species_a == species_b, 0, mean)) %>%
       filter(
         ifelse(grepl("Control", treatment_name),
-               as.numeric(as.factor(species_b)) < as.numeric(as.factor(species_a)),
+               as.numeric(as.factor(species_b)) <= as.numeric(as.factor(species_a)),
                as.numeric(as.factor(species_b)) > as.numeric(as.factor(species_a))))
 
   } else {
@@ -436,30 +572,28 @@ correlation_heatmap_figure <- function(model, path) {
     return(NULL)
   }
 
-
   p <- ggplot(Omega_ordered,
-              aes(
-                x = species.x,
+              aes(x = species.x,
                 y = species.y,
                 fill = mean)) +
     geom_tile() +
-    scale_fill_gradient2(
-      low = "red",
-      mid = "white",
-      high = "blue") +
+    scale_fill_gradient2(low = "red",
+                         mid = "white",
+                         high = "blue",
+      limits = c(-0.51, 0.51)) +
     labs(x = "",
          y = "",
-         fill = "",
-         title = "Correlation between species") +
-    theme(
-      axis.text.x = element_text(
-        angle = 90,
-        vjust = 0,
-        hjust = 1),
-       axis.text.y = element_blank(),
+         fill = "Between species correlation") +
+    guides(fill = guide_colorbar(title.position = "top",
+                                 title.hjust = 0.5,
+                                 direction = "horizontal",
+                                 barwidth = 16)) +
+    theme(axis.text = element_text(face = "italic"),
+      axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1),
       axis.ticks = element_blank(),
-      legend.position = "left",
-      legend.key.height = unit(1.6, "cm"))
+      legend.position = c(0, 1),
+      legend.justification = c(-0.1, 1),
+      plot.margin = unit(c(0, 0, 0, 0), "in"))
 
   if(grepl("m2|m3", model)) {
     p <- p +
@@ -471,186 +605,119 @@ correlation_heatmap_figure <- function(model, path) {
       annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
   }
 
-  # Save plot
-  filename <- paste0("figures/", model, "_correlation_heatmap.png")
-  ggsave(filename = filename, plot = p,
-         width = 12, height = 9, dpi = 600)
-
-  # Display plot
-  print(p)
+  # # Save plot
+  # filename <- paste0("figures/", model, "_correlation_heatmap.png")
+  # ggsave(filename = filename, plot = p,
+  #        width = 10, height = 10, dpi = 600)
+  #
+  # # Display plot
+  # print(p)
 
   # Plot variance only
   variance <- filter(Omega_ordered, species_a == species_b) %>%
     mutate(species.x = "Variance")
 
-  v <- ggplot(variance, aes(x = species.x, y = species.y, fill = variance.x)) +
-    geom_tile() +
-    scale_fill_gradient(
-      low = "white",
-      high = "red") +
-    labs(x = "",
-         y = "",
-         fill = "",
-         title = "Species variance") +
-    theme(
-      axis.text.x = element_text(
-        angle = 90,
-        vjust = 0,
-        hjust = 1),
-      axis.text.y = element_blank(),
-      axis.ticks = element_blank(),
-      legend.position = "right",
-      legend.key.height = unit(1.6, "cm"),
-      plot.title = element_text(hjust = 0.5),
-      aspect.ratio = 30)
-
-  filename <- paste0("figures/", model, "_variance_heatmap.png")
-  ggsave(filename = filename, plot = v,
-         width = 12, height = 9, dpi = 600)
-
-
   # Or with barplot
-  v2 <- ggplot(variance, aes(x = species_b, y = variance)) +
+  v2 <- ggplot(sigma, aes(x = species_b, y = variance.x)) +
     geom_bar(stat = "identity") +
     coord_flip(expand = F) +
-    theme(axis.text.y = element_blank()) +
     labs(x = "",
-         y = "Variance")
-
-  filename <- paste0("figures/", model, "_variance_barplot.png")
-  ggsave(filename = filename, plot = v2,
-         width = 12, height = 9, dpi = 600)
-
-}
-
-
-#' Impact heatmap figure
-#'
-#' Creates an S x S heatmap of covariances between species. Red is negative,
-#' blue is positive.
-#'
-#' @usage impact_heatmap_figure(model = "m3")
-#'
-#' @importFrom forcats fct_reorder
-#' @export
-
-impact_heatmap_figure <- function(model, path) {
-
-  # Load model
-  model_output <- load_model(model, path)
-
-  species_list <- model_output$data_list$species_list
-  n = max(species_list$species_id)
-
-  env_covariates <- model_output$data_list$env_covariates %>%
-    select(treatment_id, fence, treatment) %>%
-    distinct()
-
-  # Models have different number of treatments
-  if(grepl("m1", model)) {
-    sigma <- extract_pars(model_output$model_summary,
-                          "sigma", "species") %>%
-      filter(parameter == "sigma") %>%
-      select(species, sd = mean)
-
-    Omega <- extract_pars(model_output$model_summary,
-                          c("Omega"),
-                          index = c("species_a", "species_b")) %>%
-      filter(parameter == "Omega") %>%
-      left_join(., species_list, by = c("species_a" = "species_id")) %>%
-      left_join(., species_list, by = c("species_b" = "species_id")) %>%
-      mutate(treatment_name = "Average across all treatments")
-
-    impact <- left_join(Omega, sigma, by = c("species_a" = "species")) %>%
-      left_join(., sigma, by = c("species_b" = "species")) %>%
-      mutate(impact = ifelse(species_a == species_b,
-                             0, (sd.y * mean) / sd.x))
-    # Order species by magnitude of Correlation
-    # impact_ordered <- mutate(impact,
-    #                         species.x = fct_reorder(species.x, total_impact_a, .desc = F),
-    #                         species.y = fct_reorder(species.y, total_impact_b, .desc = F),
-    #                         species_a = as.numeric(species.x),
-    #                         species_b = as.numeric(species.y),
-    #                         impact = ifelse(species_a == species_b, 0, impact))
-
-
-  } else if(grepl("m2|m3", model)) {
-    Omega <- extract_pars(model_output$model_summary,
-                          c("Omega"),
-                          index = c("treatment_id", "species_a", "species_b")) %>%
-      filter(parameter == "Omega") %>%
-      left_join(., species_list, by = c("species_a" = "species_id")) %>%
-      left_join(., species_list, by = c("species_b" = "species_id")) %>%
-      left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id")) %>%
-      mutate(treatment_name = paste(fence, treatment)) %>%
-      group_by(species_a) %>%
-      mutate(total_correlation_a = sum(mean)) %>%
-      group_by(species_b) %>%
-      mutate(total_correlation_b = sum(mean)) %>%
-      ungroup()
-
-    # Order species by magnitude of Correlation
-    Omega_ordered <- mutate(Omega,
-                            species.x = fct_reorder(species.x, total_correlation_a, .desc = F),
-                            species.y = fct_reorder(species.y, total_correlation_b, .desc = F),
-                            species_a = as.numeric(species.x),
-                            species_b = as.numeric(species.y),
-                            mean = ifelse(species_a == species_b, 0, mean)) %>%
-      filter(
-        ifelse(grepl("Control", treatment_name),
-               as.numeric(as.factor(species_b)) < as.numeric(as.factor(species_a)),
-               as.numeric(as.factor(species_b)) > as.numeric(as.factor(species_a))))
-
-  } else {
-    printf("Heatmaps only defined for models with interactions (m1-3)")
-    return(NULL)
-  }
-
-
-  p <- ggplot(impact,
-              aes(
-                x = species.x,
-                y = species.y,
-                fill = impact)) +
-    geom_tile() +
-    scale_fill_gradient2(
-      low = "red",
-      mid = "white",
-      high = "blue") +
-    labs(x = "Species A",
-         y = "Species B",
-         fill = "",
-         title = "Impact of Species A on Species B") +
-    theme(
-      axis.text.x = element_text(
-        angle = 90,
-        vjust = 0,
-        hjust = 1),
-      axis.ticks = element_blank(),
-      legend.position = "right",
-      legend.key.height = unit(1.6, "cm"))
+         y = "Variance") +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          aspect.ratio = 1.25,
+          plot.margin = unit(c(0.4, 0.3, 2, 0), "in"))
 
   if(grepl("m2|m3", model)) {
-    p <- p +
+    v2 <- v2 +
       facet_wrap(~ fence) +
       annotate("segment", x = 0.5, xend = n + 0.5,
                y = 0.5, yend = n + 0.5, linetype = "dashed") +
-      annotate("text", x = 5, y = n - 2, label = "Removal") +
-      annotate("text", x = n - 4, y = 3.5, label = "Control") +
       annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
   }
 
-  # Save plot
-  filename <- paste0("figures/", model, "_impact_heatmap.png")
-  ggsave(filename = filename, plot = p,
-         width = 12, height = 9, dpi = 600)
+  pv <- grid.arrange(label(p, "B)", 0),
+                     label(v2, "C)", 0),
+                     nrow = 1,
+                     widths = c(1.5, 1))
 
-  # Display plot
-  print(p)
+  filename <- paste0("figures/", model, "_covariance_barplot.png")
+  ggsave(filename = filename, plot = pv,
+         width = 14, height = 9, dpi = 600)
+
 }
 
+#' Corrplot
+#'
+#' @importFrom corrplot corrplot
+#' @export
 
+correlation_corrplot_figure <- function(model, model_output) {
 
+  species_list <- model_output$data_list$species_list %>%
+    mutate(species = ifelse(introduced == 1,
+                            paste0(gsub("\\.", " ", species), "*"),
+                            paste0(gsub("\\.", " ", species), " ")))
+
+  Omega <- extract_pars(model_output$model_summary, "Omega", c("sp_a", "sp_b")) %>%
+    left_join(., species_list, by = c("sp_a" = "species_id")) %>%
+    left_join(., species_list, by = c("sp_b" = "species_id")) %>%
+    mutate(mean = ifelse(sp_a == sp_b, 0, mean)) %>%
+    select(species.x, species.y, mean) %>%
+    spread(species.y, mean) %>%
+    select(-species.x)
+
+  rownames(Omega) <- colnames(Omega)
+
+  filename <- paste0("figures/", model, "_correlation_corrplot.png")
+  png(filename = filename,
+      width = 9,
+      height = 9,
+      units = "in",
+      res = 600)
+
+  p <- corrplot(as.matrix(Omega),
+           is.corr = F,
+           diag = F,
+           type = "lower",
+           method = "circle",
+           order = "FPC",
+           tl.srt = 50,
+           tl.offset = 1,
+           tl.col = "black",
+           tl.cex = 0.8,
+           font = 3,
+           cl.lim = c(-0.5, 0.5))
+
+  dev.off()
+
+  sigma <- extract_pars(model_output$model_summary,
+                        c("sigma"),
+                        index = "species_id") %>%
+    filter(parameter == "sigma") %>%
+    mutate(variance = mean^2) %>%
+    select(species_id, variance) %>%
+    left_join(., species_list)
+
+  sigma_ordered <- sigma[match(rownames(p), sigma$species),] %>%
+    mutate(species_id = n():1)
+
+  v2 <- ggplot(sigma_ordered, aes(x = species_id, y = variance)) +
+    geom_bar(stat = "identity") +
+    coord_flip(expand = F) +
+    scale_y_reverse() +
+    labs(x = "",
+         y = "Variance") +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line.y = element_blank(),
+          aspect.ratio = 1.25)
+         # plot.margin = unit(c(0.4, 0.3, 2, 0), "in"))
+
+  filename <- paste0("figures/", model, "_covariance_barplot.png")
+  ggsave(filename = filename, plot = v2,
+    width = 14, height = 9, dpi = 600)
+}
 
 #' Interaction network figure
 #'
@@ -659,14 +726,13 @@ impact_heatmap_figure <- function(model, path) {
 #' are weighted by the magnitude of the interaction, but are only relative
 #' within a given network
 #'
+#' @param subset select positive, negative or specific interactions
+#'
 #' @usage interaction_network_figure(model = "m3")
 #' @import circlize
 #' @export
 
-interaction_network_figure <- function(model, path) {
-
-  # Load model
-  model_output <- load_model(model, path)
+interaction_network_figure <- function(model, model_output, subset = c("negative")) {
 
   species_list <- model_output$data_list$species_list
 
@@ -682,7 +748,8 @@ interaction_network_figure <- function(model, path) {
                           c("Sigma"),
                           index = c("species_a", "species_b")) %>%
       mutate(treatment_id = 1) %>%
-      filter(parameter == "Sigma") %>%
+      filter(parameter == "Sigma",
+             species_a != species_b) %>%
       left_join(., species_list, by = c("species_a" = "species_id")) %>%
       left_join(., species_list, by = c("species_b" = "species_id"))
   }
@@ -692,7 +759,8 @@ interaction_network_figure <- function(model, path) {
     Sigma <- extract_pars(model_output$model_summary,
                         c("Sigma"),
                         index = c("treatment_id", "species_a", "species_b")) %>%
-    filter(parameter == "Sigma") %>%
+    filter(parameter == "Sigma",
+           species_a != species_b) %>%
     left_join(., species_list, by = c("species_a" = "species_id")) %>%
     left_join(., species_list, by = c("species_b" = "species_id")) %>%
     left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id"))
@@ -707,34 +775,52 @@ interaction_network_figure <- function(model, path) {
   factors <- 1:n
 
   # Scale covariances for figure
-  Sigma <- mutate(Sigma, interaction = mean / min(mean) * 4)
+  Sigma <- mutate(Sigma, interaction = as.numeric(abs(scale(mean))) / 1.5)
+
 
   for(e in 1:E){
 
     # Get figure details
     treatment = filter(env_covariates, treatment_id == e)
     name = ifelse(E == 1, "all", paste0(treatment$fence, treatment$treatment))
-    filename = paste0("figures/", model, "_network_", name, ".png")
+    filename = paste0("figures/", model, "_", subset, "_network_", name, ".png")
 
     # Filter out significant negative interactions (upper limit below zero).
-    interactions <-
-      filter(Sigma,
-             conf_high < 0,
-             treatment_id == e)
+    if(subset == "negative"){
+      interactions <-
+        filter(Sigma,
+               conf_high < 0,
+               treatment_id == e)
+
+      int_colour = "red"
+
+      printf("Displaying negative interactions")
+    } else if(subset == "positive") {
+      interactions <-
+          filter(Sigma,
+                 conf_low > 0,
+                 treatment_id == e)
+
+      int_colour = "blue"
+
+      printf("Displaying positive interactions")
+    } else {
+      printf("Interaction figure for individual species not yet defined")
+    }
 
     # Check that there are interactions to plot
     if(nrow(interactions) == 0){
-      printf(paste(model, name, "has no significant negative interactions"))
+      printf(paste(model, name, "has no significant interactions"))
       next
     }
 
     # Open device
     circos.clear()
     png(filename= filename,
-        width = 7200,
-        height = 7200,
+        width = 6000,
+        height = 5400,
         res = 600,
-        pointsize = 18)
+        pointsize = 14)
 
     # Initialise plot
     circos.par(
@@ -763,7 +849,7 @@ interaction_network_figure <- function(model, path) {
 
     # Colour labels by introduced status
     #labels <- data.frame(species = sort(species_list$species))
-    #colour = ifelse(traits$introduced == 1, "black", "grey")
+    colour = ifelse(species_list$introduced == 1, "black", "grey")
 
     labels = gsub("\\.", " ", species_list$species)
 
@@ -772,10 +858,10 @@ interaction_network_figure <- function(model, path) {
       x = rep(0.5, n),
       y = rep(1, n),
       labels = labels,
-      cex = 0.8,
+      cex = 1,
       factors = factors,
-      #col = labels$colour,
-      font = 1,
+      col = colour,
+      font = 3,
       adj = c(0, 0.5),
       facing = "clockwise",
       niceFacing = T
@@ -788,7 +874,7 @@ interaction_network_figure <- function(model, path) {
         point1 = 0.5,
         sector.index2 = interactions$species_b[i],
         point2 = 0.5,
-        col = "red",
+        col = int_colour,
         lwd = interactions$interaction[i],
         h.ratio = 0.8)
     }
@@ -796,6 +882,37 @@ interaction_network_figure <- function(model, path) {
     # Save file
     dev.off()
   }
+}
+
+#' Combine covariance heatmap and network
+#'
+#' @importFrom png readPNG
+#' @importFrom grid rasterGrob
+#' @export
+
+heatmap_network_figure <- function(model, model_output) {
+
+  if(model != "m1"){
+    printf("Combined figure only defined for m1")
+  }
+
+  # Create figures
+  correlation_heatmap_figure(model, model_output)
+  interaction_network_figure(model, model_output)
+
+  # Load as images
+  p1 <- readPNG(paste0("figures/", model, "_covariance_barplot.png"))
+  p2 <- readPNG(paste0("figures/", model, "_negative_network_all.png"))
+
+  p <- arrangeGrob(rasterGrob(p1),
+               label(rasterGrob(p2), "C)"),
+               nrow = 2,
+               widths = c(2, 1))
+
+  filename <- paste0("figures/", model, "_covariance_heatmap_network.png")
+  ggsave(filename = filename, plot = p,
+         width = 6, height = 9, dpi = 600)
+
 }
 
 #' Covariance change between treatments
@@ -806,13 +923,11 @@ interaction_network_figure <- function(model, path) {
 #' @usage covaraiance_density_figure("m6", species = c("Avena.fatua", "Bromus.diandrus", "Acetosella.vulgaris"))
 #' @export
 
-covariance_distribution_figure <- function(model, path,
+
+covariance_distribution_figure <- function(model, model_output,
                                       species = c("Avena.fatua",
                                                   "Bromus.diandrus",
                                                   "Acetosella.vulgaris")) {
-
-  # Load model
-  model_output <- load_model(model, path)
 
   species_list <- model_output$data_list$species_list
 
@@ -822,7 +937,7 @@ covariance_distribution_figure <- function(model, path,
 
   # Models have different number of treatments
   if(!grepl("m2|m3", model)) {
-    printf("Figure only defined for models with varying covariances")
+    printf("Covariance distribution figure only defined for models with varying covariances")
     return(NULL)
   }
 
@@ -840,27 +955,50 @@ covariance_distribution_figure <- function(model, path,
     filter(species.x %in% species,
            species_a != species_b) %>%
     group_by(species.x, fence, treatment) %>%
-    summarise(total = mean(mean),
-              ucl = quantile(mean, probs = 0.95),
-              lcl = quantile(mean, probs = 0.05))
+    summarise(ucl = quantile(mean, probs = 0.975),
+              ucr = quantile(mean, probs = 0.75),
+              med = quantile(mean, probs = 0.50),
+              lcr = quantile(mean, probs = 0.25),
+              lcl = quantile(mean, probs = 0.025)) %>%
+    ungroup() %>%
+    mutate(species.x = paste0(gsub("\\.", " ", species.x), "*"))
 
-  s <- ggplot(sp_cov, aes(x = fence, linetype = treatment)) +
-    geom_point(aes(y = total), position = position_dodge(width = 0.3)) +
+  s <- ggplot(sp_cov, aes(x = treatment,
+                          fill = fence,
+                          shape = fence)) +
+    geom_hline(aes(yintercept = 0)) +
     geom_errorbar(aes(ymin = lcl, ymax = ucl),
                   position = position_dodge(width = 0.3),
-                  width = 0) +
+                  width = 0,
+                  size = 1.5) +
+    geom_errorbar(aes(ymin = lcr, ymax = ucr),
+                  position = position_dodge(width = 0.3),
+                  width = 0,
+                  size = 3.2,
+                  color = "dodgerblue3") +
+    geom_point(aes(y = med),
+               position = position_dodge(width = 0.3),
+               size = 4.5) +
+    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    scale_fill_manual(values = c("black", "white")) +
+    scale_shape_manual(values = c(21, 21)) +
     facet_grid(~ species.x) +
-    coord_flip() +
     labs(y = "Covariance",
          x = "",
-         linetype = "") +
-    theme(
-      legend.position = "right"
-    )
+         fill = "",
+         colour = "",
+         shape = "") +
+    guides(linetype = guide_legend(nrow = 2,
+                                   keywidth = 3)) +
+    theme(strip.text = element_text(face = "italic"),
+          legend.position = c(1, 0),
+          legend.justification = c(1, 0),
+          legend.box = "horizontal")
 
   filename <- paste0("figures/", model, "_covariance_distributions.png")
   ggsave(filename = filename, plot = s,
-         width = 12, height = 9, dpi = 600)
+         width = 12, height = 5, dpi = 600)
 
   # Display plot
   print(s)
@@ -883,56 +1021,51 @@ covariance_distribution_figure <- function(model, path,
 #' }
 #'
 #' @usage trait_correlation_figure("m4", trait = "SLA")
+#'
+#' @importFrom tidyr gather
 #' @export
 
-trait_correlation_figure <- function(model, path, trait_id = "Max.height"){
+trait_correlation_figure <- function(model){
 
-  # Load model
-  model_output <- load_model(model, path)
+  model_output <- load_model("m3_trait_regression")
 
-  species_list <- model_output$data_list$species_list
+  tr <- data.frame(tr = 1:nlevels(factor(traits$trait)),
+    trait = levels(factor(traits$trait))) %>%
+    mutate(trait = gsub("\\.", " ", trait),
+      trait = gsub("Vegetative", "Canopy", trait))
 
-  env_covariates <- model_output$data_list$env_covariates %>%
-    select(treatment_id, fence, treatment) %>%
-    distinct()
+  t <- data.frame(t = 1:model_output$data_list$N_treatment,
+    treatment = c("Unslashed", "Slashed", "Unslashed", "Slashed"),
+    fence = c("Fenced", "Fenced", "Grazed", "Grazed"))
 
-  # Models have different number of treatments
-  if(!grepl("m2|m3", model)) {
-    printf("Figure only defined for models with varying covariances")
-    break
-  }
+  mu <- extract_pars(model_output$model_summary, "B_slope", c("tr", "t")) %>%
+    left_join(., tr) %>%
+    left_join(., t)
 
-  Sigma <- extract_pars(model_output$model_summary,
-                        c("Sigma"),
-                        index = c("treatment_id", "species_a", "species_b")) %>%
-    filter(parameter == "Sigma") %>%
-    left_join(., species_list, by = c("species_a" = "species_id")) %>%
-    left_join(., species_list, by = c("species_b" = "species_id")) %>%
-    left_join(.,  env_covariates, by = c("treatment_id" = "treatment_id")) %>%
-    rename(mean_cov = mean)
-
-  trait <- filter(traits, grepl(paste0(trait_id, collapse = "|"), trait)) %>%
-    tidyr::gather(quantile, value, mean:max) %>%
-    filter(quantile == "max")
-
-  trait_diff <- filter(Sigma, species.x %in% species_list$species,
-           species_a != species_b) %>%
-    left_join(trait, by = c("species.x" = "species")) %>%
-    left_join(trait, by = c("species.y" = "species")) %>%
-    filter(quantile.x == quantile.y) %>%
-    mutate(difference = abs(value.x - value.y))
-
-  p <- ggplot(trait_diff, aes(x = difference,
-                              y = mean_cov)) +
-    geom_hline(aes(yintercept = 0), linetype = "dashed") +
-    geom_point(alpha = 0.8) +
-    geom_smooth(method = "lm", se = F, color = "red") +
-    facet_grid(fence ~ treatment) +
-    coord_cartesian(expand = F, ylim = c(-300, 300)) +
-    labs(x = paste("Absolute", trait_id, "difference"),
-         y = "Between species covariance") +
+  p <- ggplot(mu, aes(x = trait,
+    fill = fence,
+    shape = fence)) +
+    geom_hline(aes(yintercept = 0)) +
+    geom_errorbar(aes(ymin = conf_low, ymax = conf_high),
+      size = 1.5,
+      position = position_dodge(width = 0.5),
+      width = 0) +
+    geom_point(aes(y = mean),
+      size = 4.5,
+      position = position_dodge(width = 0.5)) +
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
-    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf)
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    scale_fill_manual(values = c("black", "white")) +
+    scale_shape_manual(values = c(21, 21)) +
+    facet_grid( ~ treatment) +
+    labs(x = "",
+      y = "Slope coefficient",
+      shape = "",
+      fill = "") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = c(1, 0),
+      legend.justification = c(1, 0),
+      legend.box = "horizontal")
 
   # Save plot
   filename <- paste0("figures/", model, "_covariance_trait_correlation.png")
@@ -944,30 +1077,95 @@ trait_correlation_figure <- function(model, path, trait_id = "Max.height"){
 
 }
 
+tobit_example_figure <- function(n = 25){
+
+  tobit <- data.frame(x = seq(-2, 2, len = n),
+                      Estimated = seq(-2, 2, len = n) + rnorm(n, 0, 0.2)) %>%
+    mutate(Observed = ifelse(Estimated < 0 , 0, Estimated)) %>%
+    gather(obs, val, -x)
+
+  p <- ggplot(tobit, aes(x, val, shape = obs)) +
+    geom_hline(aes(yintercept = 0)) +
+    geom_point(size = 4) +
+    geom_abline(aes(intercept = 0, slope = 1),
+                linetype = "dashed",
+                color = "red",
+                size = 1.5) +
+    coord_cartesian(xlim = c(-2, 2.2),
+                    ylim = c(-2, 2),
+                    expand = F) +
+    scale_shape_manual(values = c(1, 16)) +
+    labs(x = "Environmental gradient",
+         y = "Latent habitat suitability",
+         shape = "") +
+    theme(legend.position = c(1, 0),
+          legend.justification = c(1, 0))
+
+  ggsave(filename = "figures/S1_tobit_example.png", plot = p,
+         height = 6, width = 6, device = "png", dpi = 600)
+
+  print(p)
+}
+
+species_abundance_distribution_figure <- function(years = 2013:2016) {
+
+  prop <- filter(cover, year %in% years) %>%
+    subset_species_plots(., threshold = 0) %>%
+    mutate(common = ifelse(prop_plots > .19, "Common", "Uncommon"),
+           species = ifelse(introduced == 1,
+                            paste0(gsub("\\.", " ", species), "*"),
+                            paste0(gsub("\\.", " ", species), " "))) %>%
+    filter(!is.na(species))
+
+  p <- ggplot(prop, aes(x = reorder(species, prop_plots),
+                   y = prop_plots,
+                   fill = common)) +
+    geom_bar(stat = "identity") +
+    coord_cartesian(expand = F) +
+    labs(x = "",
+         y = "Proportion of plots occupied",
+         fill = "") +
+    scale_fill_manual(values = c("black", "grey")) +
+    theme(axis.text.x = element_text(angle = 90,
+                                     hjust = 1,
+                                     vjust = 0.5,
+                                     size = 10),
+          aspect.ratio = 0.2,
+          legend.position = c(0, 1),
+          legend.justification = c(-0.5, 1))
+
+  ggsave(filename = "figures/S2_species_abundance_distribution.png", plot = p,
+         height = 6, width = 18, device = "png", dpi = 400)
+
+}
 
 #' Extract parameter estimates
 #'
-#' Stan output provides summaries of parameter estimates, this can be
-#' faster than working directly with samples
+#' Stan output provides summaries of parameter estimates, this can be faster than working directly with samples
 #'
-#' @param fit output of a Stan model
+#' @param summary output of a Stan model summary
 #' @param pars vector of parameter names
 #' @param index vector of labels for parameter indexes
 #'
-#' @usage pars <- extract_par(model_output, c("B"),
-#' c("species", "covariate", "treatment"))
+#' @importFrom tibble rownames_to_column
+#' @importFrom tidyr separate
+#'
+#' @examples
+#' pars <- extract_par(fit = model_output$model_summary,
+#'                           pars = c("B"),
+#'                           index = c("species", "covariate", "treatment"))
 
 
 extract_pars <- function(summary, pars, index) {
 
   # Grep for desired parameter estimates
   suppressWarnings(estimates <- summary %>%
-    mutate(id = rownames(.)) %>%
-    filter(grepl(paste(pars, collapse = "|"), id)
+    rownames_to_column(var = "id") %>%
+    filter(grepl(paste0("^", pars, collapse = "|"), id)
                   & !grepl("raw", id)) %>%
-    tidyr::separate(id,
-                    into = c("parameter", index),
-                    sep = "\\[|,|\\]", extra = "drop") %>%
+    separate(id,
+             into = c("parameter", index),
+             sep = "\\[|,|\\]", extra = "drop") %>%
     mutate_at(vars(one_of(index)), as.numeric) %>%
     select(parameter, index, mean,
                   conf_low = `2.5%`, conf_high = `97.5%`))

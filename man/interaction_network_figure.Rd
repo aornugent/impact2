@@ -6,6 +6,9 @@
 \usage{
 interaction_network_figure(model = "m3")
 }
+\arguments{
+\item{subset}{select positive, negative or specific interactions}
+}
 \description{
 Filters between species covariance matrices for significant (non-zero)
 negative interactions and displays them as a network. Links between species

@@ -18,7 +18,7 @@
 env <- readr::read_csv("data-raw/pinnacle_covariates.csv") %>%
   mutate(
     treatment = case_when(
-      grepl("control", treatment) ~ "Control",
+      grepl("control", treatment) ~ "Unslashed",
       grepl("slash", treatment) ~ "Slashed",
       TRUE ~ treatment),
     fence = case_when(
@@ -35,9 +35,6 @@ rain <- readr::read_csv("data-raw/pinnacle_rainfall.csv")
 cover <- readr::read_csv("data-raw/pinnacle_surveys.csv",
                          col_type = readr::cols(
                            cover = readr::col_double()))
-
-# Rescale data to 0-1 range
-cover <- mutate(cover, cover = cover / 100)
 
 
 # Join and filter

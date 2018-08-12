@@ -91,7 +91,8 @@ run_stan_model <- function(model, path, ...) {
     chains = 3,
     init_r = 0.5,
     save_warmup = F,
-    control = list(max_treedepth = 15)
+    control = list(max_treedepth = 15,
+                   adapt_delta = 0.8)
   )
 
   summary <- rstan::summary(mod)$summary %>%
@@ -111,6 +112,43 @@ run_stan_model <- function(model, path, ...) {
 }
 
 
+#' Logistic regression
+#'
+#' Run logit regression in JAGS
+#'
+#' @importFrom jagsUI jags
+#'
+#' @param model "m0" only
+#' @param path path to jags model (defaults to "models/")
+#'
+#' @export
+
+logistic_regression <- function(model = "m0", path = "models/"){
+
+  m <- list()
+  m$data_list <- format_data(model)
+
+  pars <- c("B_int", "B_slope", "B_rain", "B_plot", "B_site",
+            "mu_int", "mu_slope","sigma_plot", "sigma_site",
+            "sigma_int", "sigma_slope", "sigma")
+
+  m$jags_output <- jagsUI::jags(model = paste0(path, "logit_prop.jags"),
+                                data = m$data_list[1:15],
+                                parameters.to.save = pars,
+                                n.iter = 50000,
+                                n.burnin = 20000,
+                                n.thin = 30,
+                                n.chains = 4,
+                                parallel = T)
+
+
+  m$model_summary <- as.data.frame(m$jags_output$summary)
+
+  filename <- paste0(path, model, "_output.Rdata")
+  save(m, file = filename)
+}
+
+
 #' Format data for analysis
 #'
 #' Takes the preloaded Pinnacle vegetation dataset and prepares it for
@@ -124,8 +162,8 @@ run_stan_model <- function(model, path, ...) {
 
 format_data <- function(model,
                         years = c(2013:2016),
-                        threshold = 0.90,
-                        subset = "abundance",
+                        threshold = 0.2,
+                        subset = "presence",
                         lkj_prior = 25, ...) {
 
   # Load dataset
@@ -189,7 +227,8 @@ format_data <- function(model,
                      prop_scaled = (prop_cover * (n() - 1) + 0.5)/n(),
                      logit = log(prop_scaled /(1 - prop_scaled)))
 
-    y = logit$prop_scaled
+    y = logit$logit
+
   }  else {
     # Format data for tobit regression of cover values.
 
@@ -252,8 +291,9 @@ format_data <- function(model,
 subset_species_abundance <- function(dat, threshold) {
 
   # Aggregate abundance by species, then rank and filter.
-  group_by(dat, species) %>%
+  group_by(dat, species, introduced) %>%
     summarise(total_abun = sum(cover)) %>%
+    ungroup() %>%
     mutate(prop_abun = total_abun / sum(total_abun)) %>%
     arrange(desc(prop_abun)) %>%
     filter(cumsum(prop_abun) < threshold) %>%
@@ -279,13 +319,14 @@ subset_species_plots <- function(dat, threshold) {
   n_total = n_distinct(paste(dat$year, dat$plot_id))
 
   # Aggregate presences by species, filter by threshold.
-  group_by(dat, species, year) %>%
+  group_by(dat, introduced, species, year) %>%
     summarise(n = n_distinct(plot_id)) %>%
-    spread(year, n) %>%
-    gather(year, n, -species) %>%
+    spread(year, n, fill = 0) %>%
+    gather(year, n, -species, -introduced) %>%
     summarise(total_plots = sum(n),
               prop_plots = total_plots / n_total) %>%
     filter(prop_plots >= threshold) %>%
+    ungroup() %>%
     mutate(species_id = as.numeric(as.factor(species))) %>%
     arrange(species_id)
 }

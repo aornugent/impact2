@@ -4,7 +4,7 @@
 \alias{format_data}
 \title{Format data for analysis}
 \usage{
-format_data(model, years = c(2013:2016), threshold = 0.15,
+format_data(model, years = c(2013:2016), threshold = 0.17,
   subset = "presence", lkj_prior = 25, ...)
 }
 \arguments{

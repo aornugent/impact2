@@ -30,7 +30,7 @@ check_models <- function(
       posterior_check(model_output)
 
     # Delete loaded output to save space
-    rm(model_output)
+    model_output = NA
 
   }
 }
@@ -47,7 +47,7 @@ check_models <- function(
 #'
 #' @export
 
-load_model <- function(model, path, ...) {
+load_model <- function(model, path = "models/", ...) {
 
   # Format filename
   filename = paste0(path, model, "_output.Rdata")
@@ -63,7 +63,7 @@ load_model <- function(model, path, ...) {
   )
 
   # Check model type
-  if(class(model_output$stan_output) != "stanfit"){
+  if(class(model_output$stan_output) != "stanfit" & class(model_output$jags_output) != "jagsUI"){
     printf(paste(filename, "does not contain the output of a Stan model"))
     return(NULL)
   }
