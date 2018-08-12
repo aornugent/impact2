@@ -75,7 +75,6 @@ create_figures <-  function(
 #' @usage dominance_figures(model = "m0")
 #'
 #' @importFrom tidyr gather spread unite
-#' @importFrom viridis scale_colour_viridis
 #'
 #' @export
 
@@ -130,7 +129,7 @@ nonnative_dominance_figures <- function(model_output){
                   linetype = treatment),
               size = 2) +
     coord_cartesian(ylim = c(-4, 6), expand = F) +
-    scale_colour_viridis() +
+    viridis::scale_colour_viridis() +
     scale_shape_manual(values = c(19, 17, 21, 25)) +
     scale_linetype_manual(values = c(1, 5, 4, 3)) +
     labs(x = "Fertility (scaled)",
@@ -176,7 +175,7 @@ nonnative_dominance_figures <- function(model_output){
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
     annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
     coord_cartesian(xlim = c(2010, 2016.2), ylim = c(-2.4, 5), expand = F) +
-    scale_colour_viridis() +
+    viridis::scale_colour_viridis() +
     scale_shape_manual(values = c(19, 17, 21, 25)) +
     facet_wrap(~ slash, ncol = 1) +
     labs(x = "Year",
@@ -255,7 +254,6 @@ nonnative_dominance_figures <- function(model_output){
 #'
 #' @usage linear_tobit_figure(model = "m1")
 #'
-#' @importFrom viridis scale_colour_viridis
 #' @export
 
 linear_tobit_figure <- function(model, model_output) {
@@ -311,7 +309,7 @@ linear_tobit_figure <- function(model, model_output) {
                     ylim = c(-1, 1),
                     expand = F) +
     scale_linetype_manual(values = c("twodash", "solid")) +
-    scale_colour_viridis(begin = 0.2, discrete = T) +
+    viridis::scale_colour_viridis(begin = 0.2, discrete = T) +
     annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
     annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
     labs(x = "Fertility (scaled)",
@@ -649,7 +647,6 @@ correlation_heatmap_figure <- function(model, model_output) {
 
 #' Corrplot
 #'
-#' @importFrom corrplot corrplot
 #' @export
 
 correlation_corrplot_figure <- function(model, model_output) {
@@ -676,7 +673,7 @@ correlation_corrplot_figure <- function(model, model_output) {
       units = "in",
       res = 600)
 
-  p <- corrplot(as.matrix(Omega),
+  p <- corrplot::corrplot(as.matrix(Omega),
            is.corr = F,
            diag = F,
            type = "lower",
@@ -729,7 +726,6 @@ correlation_corrplot_figure <- function(model, model_output) {
 #' @param subset select positive, negative or specific interactions
 #'
 #' @usage interaction_network_figure(model = "m3")
-#' @import circlize
 #' @export
 
 interaction_network_figure <- function(model, model_output, subset = c("negative")) {
@@ -815,7 +811,7 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
     }
 
     # Open device
-    circos.clear()
+    circlize::circos.clear()
     png(filename= filename,
         width = 6000,
         height = 5400,
@@ -823,7 +819,7 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
         pointsize = 14)
 
     # Initialise plot
-    circos.par(
+    circlize::circos.par(
       track.height = 0.1,
       gap.after = 0,
       canvas.xlim = c(-1.5, 1.5),
@@ -831,11 +827,11 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
                       1.6),
       cell.padding = c(0.01, 0.01, 0.01, 0.01)
     )
-    circos.initialize(factors = factors, xlim = c(0, 1))
+    circlize::circos.initialize(factors = factors, xlim = c(0, 1))
 
 
     # Buffer between labels and links
-    circos.track(
+    circlize::circos.track(
       ylim = c(0, 1),
       factors = factors,
       track.height = 0.05,
@@ -854,7 +850,7 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
     labels = gsub("\\.", " ", species_list$species)
 
     # Add labels
-    circos.trackText(
+    circlize::circos.trackText(
       x = rep(0.5, n),
       y = rep(1, n),
       labels = labels,
@@ -869,7 +865,7 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
 
     # Add links for interactions
     for (i in 1:nrow(interactions)){
-      circos.link(
+      circlize::circos.link(
         sector.index1 = interactions$species_a[i],
         point1 = 0.5,
         sector.index2 = interactions$species_b[i],

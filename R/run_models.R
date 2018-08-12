@@ -116,8 +116,6 @@ run_stan_model <- function(model, path, ...) {
 #'
 #' Run logit regression in JAGS
 #'
-#' @importFrom jagsUI jags
-#'
 #' @param model "m0" only
 #' @param path path to jags model (defaults to "models/")
 #'
