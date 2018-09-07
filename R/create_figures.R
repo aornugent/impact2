@@ -27,6 +27,8 @@ create_figures <-  function(
   path = "models/",
   figs = 1:6, ...) {
 
+  dir.create("figures/", showWarnings = F)
+
   for(model in models) {
 
     # Load model
@@ -45,7 +47,7 @@ create_figures <-  function(
         linear_tobit_figure(model, model_output)
 
       # Create covariance heatmap for joint tobit models
-      if(fig == 3)
+      if(fig == 3 & model == "m1")
         correlation_corrplot_figure(model, model_output)
 
       # Create interaction network diagram for joint tobit models
@@ -53,7 +55,7 @@ create_figures <-  function(
         interaction_network_figure(model, model_output)
 
       # Create interaction density figure for models with varying covariances
-      if(fig == 5)
+      if(fig == 5 & model == "m3")
         covariance_distribution_figure(model, model_output)
 
       # Create trait covariance correlation plots
@@ -93,6 +95,7 @@ nonnative_dominance_figures <- function(model_output){
 
   # Extract raw data
   raw_data <- data.frame(x = model_output$data_list$X[, 2],
+                         x2 = model_output$data_list$X[, 3],
                    y_raw = model_output$data_list$y_observed,
                    y_scaled = unlogit(model_output$data_list$y_observed),
                    t = model_output$data_list$treatment,
@@ -203,6 +206,38 @@ nonnative_dominance_figures <- function(model_output){
          height = 8, width = 14, device = "png", dpi = 600)
 
 
+  # Plot effect of rainfall
+  B <- extract_pars(model_output$model_summary,
+                    pars = c("mu_int", "B_rain"),
+                    index = c("year")) %>%
+    group_by(parameter) %>%
+    summarise(mean = mean(mean),
+              conf_low = min(conf_low),
+              conf_high = max(conf_high)) %>%
+    gather(quantile, value, mean:conf_high) %>%
+    spread(parameter, value) %>%
+    mutate
+
+  p4 <- ggplot(raw_data, aes(x = x2, y_raw)) +
+    geom_jitter(aes(color = x), size = 3, width = 0.02) +
+    geom_abline(data = B, aes(intercept = mu_int, slope = B_rain,
+                              linetype = grepl("conf", quantile)),
+                size = 1.4) +
+    coord_cartesian(xlim = c(-2, 2)) +
+    scale_color_viridis_c(limits = c(-2.2, 2.2)) +
+    labs(x = "Spring rainfall (scaled)",
+         y = "Proportion of nonnative species (logit scale)",
+          color = "Fertility (scaled)") +
+    guides(linetype = F,
+           colour = guide_colourbar(title.position = "top",
+                                    barwidth = 8,
+                                    barheight = 0.8)) +
+    theme(legend.position = c(0.8, 0.1),
+          legend.direction = "horizontal")
+
+  ggsave(label(p4, "A"), filename = "figures/S5a_rainfall_figure.png",
+         device = "png", dpi = 600, height = 6, width = 6)
+
   pred_year <-
     extract_pars(model_output$model_summary,
       pars = c("B_int", "B_slope"),
@@ -290,12 +325,12 @@ linear_tobit_figure <- function(model, model_output) {
 
 
   # Predict values, highlight species with positive slopes
-  pred_cover <- pred_cover(species_coef, range = 2.5) %>%
+  pred_fert <- pred_cover(species_coef, range = 2.5) %>%
     left_join(., species, by = c("species" = "species_id"))
 
-  scale <- min(c(ceiling(max(pred_cover$mean)), 1))
+  scale <- min(c(ceiling(max(pred_fert$mean)), 1))
 
-  p <- ggplot(pred_cover,
+  p <- ggplot(pred_fert,
               aes(x = x,
                   group = desc(species))) +
     geom_line(aes(y = mean,
@@ -306,7 +341,7 @@ linear_tobit_figure <- function(model, model_output) {
                colour = "black") +
     facet_grid(treatment ~ fence) +
     coord_cartesian(xlim = c(-2, 2),
-                    ylim = c(-1, 1),
+                    ylim = c(-100, 100),
                     expand = F) +
     scale_linetype_manual(values = c("twodash", "solid")) +
     viridis::scale_colour_viridis(begin = 0.2, discrete = T) +
@@ -317,27 +352,88 @@ linear_tobit_figure <- function(model, model_output) {
       linetype = "",
       color = "Tobit slope") +
     guides(color = F,
-        # guide_colourbar(title.position = "top",
-        #                            title.hjust = 0.5,
-        #                            direction = "horizontal",
-        #                            barwidth = 8,
-        #                            barheight = 0.8,
-        #                            order = 1),
-           linetype = guide_legend(nrow = 2,
-                                   keywidth = 4)) +
+           linetype = guide_legend(nrow = 2, keywidth = 4)) +
     theme(legend.box = "horizontal",
           legend.position = c(1, 0),
           legend.justification = c(1, 0),
           legend.title = element_text(size = 14))
 
-
   # Save plot
-  filename <- paste0("figures/", model, "_linear_tobit_predictions.png")
+  filename <- paste0("figures/F2_", model, "_linear_tobit_predictions.png")
   ggsave(filename = filename, plot = p,
          height = 7, width = 7, device = "png", dpi = 600)
 
   # Display plot
   print(p)
+
+  # Get rain effect quantiles from full posterior
+  b_rain <- as.data.frame(model_output$stan_output, pars = "B") %>%
+    gather(par, val) %>%
+    separate(par, c("par", "treatment_id", "species_id", "coef"), sep = "\\[|,") %>%
+    mutate(species_id = as.numeric(species_id),
+           treatment_id = as.numeric(treatment_id),
+           coef = factor(coef, labels = c("int", "fert", "rain"))) %>%
+    group_by(species_id, treatment_id, coef) %>%
+    summarise(mean = mean(val),
+              conf_low = quantile(val, 0.1),
+              conf_high = quantile(val, 0.90)) %>%
+    left_join(species) %>%
+    left_join(env_covariates) %>%
+    filter(coef == "rain")
+
+  p2 <- ggplot(b_rain, aes(x = reorder(species, mean), shape = origin)) +
+    geom_hline(aes(yintercept = 0)) +
+    geom_errorbar(aes(ymin = conf_low, ymax = conf_high), width = 0, size = 1) +
+    geom_point(aes(y = mean), size  = 2, fill = "white") +
+    facet_grid(treatment ~ fence) +
+    labs(x = "", y = "Rainfall effect", shape = "") +
+    scale_shape_manual(values = c(21, 16)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+          legend.position = c(0.9, 0.06))
+
+  filename <- paste0("figures/S5b_", model, "_rainfall_effect.png")
+  ggsave(filename = filename, plot = label(p2, "B"),
+         height = 12, width = 10, device = "png", dpi = 600)
+
+  pred_rain <- filter(species_coef, grepl("int|rain", coef)) %>%
+    select(-conf_high, -conf_low) %>%
+    spread(coef, mean) %>%
+    expand_grid(x = seq(-2.2, 2, length.out = 1000), .) %>%
+    mutate(mean = int + rain * x) %>%
+    left_join(., species, by = c("species" = "species_id"))
+
+  p3 <- ggplot(pred_rain,
+              aes(x = x,
+                  group = desc(species))) +
+    geom_line(aes(y = mean,
+                  color = as.factor(rain),
+                  linetype = origin),
+              size = 1.5) +
+    geom_hline(aes(yintercept = 0),
+               colour = "black") +
+    facet_grid(treatment ~ fence) +
+    coord_cartesian(xlim = c(-2, 2),
+                    ylim = c(-100, 100),
+                    expand = F) +
+    scale_linetype_manual(values = c("twodash", "solid")) +
+    viridis::scale_colour_viridis(begin = 0.2, discrete = T) +
+    annotate("segment", x = -Inf, xend = Inf, y = -Inf, yend = -Inf) +
+    annotate("segment", x = -Inf, xend = -Inf, y = -Inf, yend = Inf) +
+    labs(x = "Spring rainfall (scaled)",
+         y = "Latent habitat suitability",
+         linetype = "",
+         color = "Tobit slope") +
+    guides(color = F,
+           linetype = guide_legend(nrow = 2, keywidth = 4)) +
+    theme(legend.box = "horizontal",
+          legend.position = c(1, 0),
+          legend.justification = c(1, 0),
+          legend.title = element_text(size = 14))
+
+  filename <- paste0("figures/S5b_", model, "_rainfall_tobit_prediction.png")
+  ggsave(filename = filename, plot = label(p3, "B"),
+         height = 7, width = 7, device = "png", dpi = 600)
+
 }
 
 
@@ -639,7 +735,7 @@ correlation_heatmap_figure <- function(model, model_output) {
                      nrow = 1,
                      widths = c(1.5, 1))
 
-  filename <- paste0("figures/", model, "_covariance_barplot.png")
+  filename <- paste0("figures/F3b_", model, "_covariance_barplot.png")
   ggsave(filename = filename, plot = pv,
          width = 14, height = 9, dpi = 600)
 
@@ -673,12 +769,14 @@ correlation_corrplot_figure <- function(model, model_output) {
       units = "in",
       res = 600)
 
-  p <- corrplot::corrplot(as.matrix(Omega),
+  m <- as.matrix(Omega)
+  o <- rev(corrplot::corrMatOrder(m, "FPC"))
+
+  p <- corrplot::corrplot(m[o, o],
            is.corr = F,
            diag = F,
            type = "lower",
            method = "circle",
-           order = "FPC",
            tl.srt = 50,
            tl.offset = 1,
            tl.col = "black",
@@ -696,7 +794,7 @@ correlation_corrplot_figure <- function(model, model_output) {
     select(species_id, variance) %>%
     left_join(., species_list)
 
-  sigma_ordered <- sigma[match(rownames(p), sigma$species),] %>%
+  sigma_ordered <- sigma[o,] %>%
     mutate(species_id = n():1)
 
   v2 <- ggplot(sigma_ordered, aes(x = species_id, y = variance)) +
@@ -711,7 +809,7 @@ correlation_corrplot_figure <- function(model, model_output) {
           aspect.ratio = 1.25)
          # plot.margin = unit(c(0.4, 0.3, 2, 0), "in"))
 
-  filename <- paste0("figures/", model, "_covariance_barplot.png")
+  filename <- paste0("figures/F3c_", model, "_covariance_barplot.png")
   ggsave(filename = filename, plot = v2,
     width = 14, height = 9, dpi = 600)
 }
@@ -779,7 +877,7 @@ interaction_network_figure <- function(model, model_output, subset = c("negative
     # Get figure details
     treatment = filter(env_covariates, treatment_id == e)
     name = ifelse(E == 1, "all", paste0(treatment$fence, treatment$treatment))
-    filename = paste0("figures/", model, "_", subset, "_network_", name, ".png")
+    filename = paste0("figures/F3a_", model, "_", subset, "_network_", name, ".png")
 
     # Filter out significant negative interactions (upper limit below zero).
     if(subset == "negative"){
@@ -992,7 +1090,7 @@ covariance_distribution_figure <- function(model, model_output,
           legend.justification = c(1, 0),
           legend.box = "horizontal")
 
-  filename <- paste0("figures/", model, "_covariance_distributions.png")
+  filename <- paste0("figures/F4_", model, "_covariance_distributions.png")
   ggsave(filename = filename, plot = s,
          width = 12, height = 5, dpi = 600)
 
@@ -1064,7 +1162,7 @@ trait_correlation_figure <- function(model){
       legend.box = "horizontal")
 
   # Save plot
-  filename <- paste0("figures/", model, "_covariance_trait_correlation.png")
+  filename <- paste0("figures/F5_", model, "_covariance_trait_correlation.png")
   ggsave(filename = filename, plot = p,
          width = 12, height = 9, dpi = 600)
 
@@ -1075,27 +1173,31 @@ trait_correlation_figure <- function(model){
 
 tobit_example_figure <- function(n = 25){
 
-  tobit <- data.frame(x = seq(-2, 2, len = n),
-                      Estimated = seq(-2, 2, len = n) + rnorm(n, 0, 0.2)) %>%
-    mutate(Observed = ifelse(Estimated < 0 , 0, Estimated)) %>%
+  tobit <- data.frame(x = seq(-2, 2, len = n)) %>%
+    mutate(Uncensored = x * 50 + rnorm(n, 0, 10),
+      Censored = ifelse(Uncensored < 0 , 0, Uncensored)) %>%
     gather(obs, val, -x)
 
   p <- ggplot(tobit, aes(x, val, shape = obs)) +
-    geom_hline(aes(yintercept = 0)) +
-    geom_point(size = 4) +
-    geom_abline(aes(intercept = 0, slope = 1),
+    geom_abline(aes(intercept = 0, slope = 50),
                 linetype = "dashed",
                 color = "red",
                 size = 1.5) +
+    geom_hline(aes(yintercept = 0)) +
+    geom_point(size = 4, fill = "white") +
     coord_cartesian(xlim = c(-2, 2.2),
-                    ylim = c(-2, 2),
+                    ylim = c(-100, 100),
                     expand = F) +
-    scale_shape_manual(values = c(1, 16)) +
+    scale_shape_manual(values = c(16, 21)) +
+    scale_y_continuous(sec.axis = dup_axis(name = "Observed cover",
+                                            breaks = c(0, 50, 100))) +
+    annotate("segment", x = Inf, xend = Inf, y = -0.5, yend = Inf) +
     labs(x = "Environmental gradient",
          y = "Latent habitat suitability",
          shape = "") +
     theme(legend.position = c(1, 0),
-          legend.justification = c(1, 0))
+          legend.justification = c(1, 0),
+          axis.line.y.right = element_blank())
 
   ggsave(filename = "figures/S1_tobit_example.png", plot = p,
          height = 6, width = 6, device = "png", dpi = 600)
