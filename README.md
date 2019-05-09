@@ -2,7 +2,9 @@
 
 Repository for reproducible analysis of the Pinnacle vegetation data using joint species tobit models. 
 
-Pre-print available on EcoEvoRxiv: **O'Reilly-Nugent, A.**, Wandrag, E., Catford, J., Gruber, B., Driscoll, D., & Duncan, R. (2018, December 18). *Measuring impact: joint-species modelling of invaded plant communities.* https://doi.org/10.32942/osf.io/rcvt4
+Pre-print available on EcoEvoRxiv: 
+
+**O'Reilly-Nugent, A.**, Wandrag, E., Catford, J., Gruber, B., Driscoll, D., & Duncan, R. (2018, December 18). *Measuring impact: joint-species modelling of invaded plant communities.* https://doi.org/10.32942/osf.io/rcvt4
 
 ### Installation
 
