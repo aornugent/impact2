@@ -9,7 +9,7 @@ Download code, set the working directory to `../impact2` and run `devtools::load
 (or open `impact2.Rproj` in RStudio and press `Ctrl + Shift + L`)
 ### Analysis
 
-Data wrangling steps are wrapped up in `format_data`. See the documentation `?format_data` for the possible knobs and dials.
+Data wrangling steps are wrapped up in `format_data()`. See the documentation `?format_data` for the possible knobs and dials.
 While these steps are specific to our dataset, the Stan files in `models/` are generic. 
 
 ``` r
@@ -23,7 +23,7 @@ data_list <- format_data(model = "m1",
                          subset = "presence",
                          lkj_prior = 25)
 
-# examine data format
+## examine data format
 str(data_list)
                          
 ## run model
@@ -44,7 +44,7 @@ summary <- rstan::summary(mod)$summary %>%
 
 ### Alternatively, these are bundled up in some higher level functoins
 
-```
+```r
 ## run models
 run_models()
 
