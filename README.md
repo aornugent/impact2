@@ -1,7 +1,6 @@
 # impact2
 
-Repository for reproducible analysis of the Pinnacle vegetation
-data using joint species tobit models.
+Repository for reproducible analysis of the Pinnacle vegetation data using joint species tobit models. Pre-print available on EcoEvoRxiv: https://ecoevorxiv.org/rcvt4
 
 ### Installation
 
