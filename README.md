@@ -5,8 +5,8 @@ data using joint species tobit models.
 
 ### Installation
 
-Download code and open `impact2.Rproj` in RStudio. `Ctrl + Shift + L` will build and load the package.
-
+Download code, set the working directory to `../impact2` and run `devtools::load_all('.')` to build and load the package.
+(or open `impact2.Rproj` in RStudio and press `Ctrl + Shift + L`)
 ### Analysis
 
 Data wrangling steps are wrapped up in `format_data`. See the documentation `?format_data` for the possible knobs and dials.
