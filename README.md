@@ -28,7 +28,7 @@ str(data_list)
                          
 ## run model
 mod <- rstan::stan(
-  fit = testfit,
+  file = "models/m1_interacting_species_tobit_varying_intercepts_slopes.stan",
   data = data_list,
   iter = 2000,
   chains = 3,
