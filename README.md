@@ -10,8 +10,13 @@ Pre-print available on EcoEvoRxiv:
 
 ### Installation
 
-Download code, set the working directory to `../impact2` and run `devtools::load_all('.')` to build and load the package.
+There are two options:
+
+1. Run `devtools::install_github("aornugent/impact2")` to install the development version. There are several dependencies, but sometimes it has trouble updating loaded packages. If you don't have the patience to resolve this, feel free to ignore package updates. You can then load the package with `library(impact2)`.
+
+2. If you'd like to edit or work with the code more closely, you can clone or download the repository (top right of this page), set the working directory to `../impact2` and run `devtools::load_all('.')` to build and load the package.
 (or open `impact2.Rproj` in RStudio and press `Ctrl + Shift + L`)
+
 ### Analysis
 
 Data wrangling steps are wrapped up in `format_data()`. See the documentation `?format_data` for the possible knobs and dials.
@@ -47,16 +52,21 @@ summary <- rstan::summary(mod)$summary %>%
   as.data.frame()
 ```
 
-### Alternatively, these are bundled up in some higher level functoins
+### Alternatively, these are bundled up in some higher level functions
+
+However because the model outputs are large we do not distribute them as part of the package.
 
 ```r
-## run models
-run_models()
+## run models and save output
+run_models("m1")
 
-## check models
-check_models()
+## previous runs can be loaded
+m <- load_model("m1")
 
-## create figures
-create_figures()
+## but most functions will do this
+check_models(model = "m1")
+
+## figure numbers may not match manuscript
+create_figures(model = "m1", figs = 3)
 ```
 
