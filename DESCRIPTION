@@ -18,7 +18,8 @@ Imports:
     grid,
     gridExtra,
     png,
-    tibble
+    tibble,
+    ggrepel
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 6.0.1
 Depends: 
